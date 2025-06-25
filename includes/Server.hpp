@@ -1,13 +1,14 @@
 #ifndef SERVER_HPP
 #define SERVER_HPP
-#pragma once
-
+#include <unordered_map>
+#include "../includes/ClientSession.hpp"
 class Server
 {
     private:        
     public:
         int listen_fd;
         int epoll_fd;
+        std::unordered_map<int, ClientSession> clients;
         Server();
         ~Server();
         void create_and_bind();

@@ -1,4 +1,6 @@
 #include "../includes/Server.hpp"
+#include "../includes/ClientSession.hpp"
+#include "../includes/Utils.hpp"
 #include <arpa/inet.h>
 #include <cstring>
 #include <fcntl.h>
@@ -7,6 +9,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 
 using namespace std;
 
@@ -66,8 +69,7 @@ void Server::create_and_bind()
     }
 
     // 5. Set socket to non-blocking mode
-    int flag = fcntl(listen_fd, F_GETFL, 0);
-    fcntl(listen_fd, F_SETFL, flag | O_NONBLOCK);
+    set_Nonblocking(listen_fd);
 }
 
 /**
@@ -101,7 +103,7 @@ void Server::setup_epoll()
         perror("register events failed!");
         exit(EXIT_FAILURE);
     }
-    std::cout << "Epoll setup complete. Waiting for events..." << std::endl;
+    cout << "Epoll setup complete. Waiting for events..." << endl;
 }
 
 /**
@@ -140,12 +142,39 @@ void Server::run_event_loop()
             if (fd == listen_fd && (ev & EPOLLIN))
             {
                 cout << "[EPOLL] Ready to accept new connection on listen_fd = " << listen_fd << endl;
-                // accept() to be implemented in Day 3
+                // Declare variables for accepting a new client connection
+                int connect_fd;
+                struct sockaddr_in cliaddr;
+                socklen_t len = sizeof(cliaddr);
+                // Accept an incoming client connection
+                connect_fd = accept(listen_fd, (struct sockaddr*)&cliaddr, &len);
+                if (connect_fd == -1)
+                {
+                    if (errno != EAGAIN && errno != EWOULDBLOCK)
+                        perror("accept failed");
+                    continue;
+                }
+                // if accepted, create a pair as {connect_fd,Client} and stored into map
+                clients[connect_fd] = ClientSession(connect_fd);
+                // Set the accepted socket to non-blocking mode
+                set_Nonblocking(connect_fd);
+                // Prepare the epoll_event structure to monitor the new socket
+                struct epoll_event client_event;
+                client_event.events = EPOLLIN | EPOLLRDHUP; // Monitor for read events and disconnection
+                client_event.data.fd = connect_fd;          // Store the socket fd in the event data
+                // Add the new socket to the epoll instance
+                int res = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connect_fd, &client_event);
+                if (res == -1)
+                {
+                    perror("register events failed!");
+                    exit(EXIT_FAILURE);
+                }
+                cout << "[INFO] Accepted new client: fd = " << connect_fd << endl;
             }
             else
             {
                 // To be extended later: handle events on client sockets
-                cout << "[EPOLL] Event on unknown fd = " << fd << std::endl;
+                cout << "[EPOLL] Event on unknown fd = " << fd << endl;
             }
         }
     }
