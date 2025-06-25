@@ -46,8 +46,8 @@ void Server::create_and_bind()
 
     // 2. Set up local address (IPv4, port 12345, any IP)
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(12345);      // Host to network byte order
-    addr.sin_addr.s_addr = INADDR_ANY; // Bind to all available interfaces
+    addr.sin_port = htons(12345);             // Host to network byte order
+    addr.sin_addr.s_addr = htonl(INADDR_ANY); // Bind to all available interfaces
 
     // 3. Bind socket to the address
     int result = bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr));
