@@ -2,7 +2,7 @@
 
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -std=c++11 -Iincludes -Wall -g
+CXXFLAGS = -std=c++17 -Iincludes -Wall -g
 
 # Target executable
 TARGET = ChatServer

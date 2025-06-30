@@ -76,3 +76,58 @@
   - Close socket and delete from `clients` map
 - Prepare for client read/write events (handle `EPOLLIN`)
 - Expand `ClientSession` to buffer input data
+
+## Development Log — Day 3 (2025-06-29)
+
+### Day3_Tasks Completed
+
+- Implemented client disconnection handling:
+  - Detected disconnections via `EPOLLRDHUP` and `EPOLLHUP`.
+  - Called `epoll_ctl(EPOLL_CTL_DEL, fd, nullptr)` to remove from epoll monitoring.
+  - Closed the socket with `close(fd)` and erased from `clients` map.
+  - Logged disconnection events clearly.
+
+- Implemented basic message receiving:
+  - Used `recv()` to read from `client_fd`.
+  - Handled return values of `recv()`:
+    - `n == 0`: client closed connection cleanly.
+    - `n < 0`: ignored `EAGAIN`/`EWOULDBLOCK`, treated others as errors.
+    - `n > 0`: read input into buffer.
+
+- Implemented message broadcasting:
+  - Formatted message as `[fd: X]: <message>`.
+  - Sent to all other clients via loop over `clients`.
+
+- Tested with multiple telnet clients:
+  - Verified server logs and broadcast worked as expected.
+
+### Day3_ClientSession Design
+
+- No major change in `ClientSession` on Day 3.
+- Still used as a placeholder for future buffer expansion and message handling.
+- Confirmed structure supports fd association and can be extended on Day 4.
+
+### Day3_Issues Encountered
+
+- **recv() broadcast not triggered**:
+  - Issue: broadcast code mistakenly placed in wrong `if` branch.
+  - Fix: ensured message sending only occurs when `n > 0`.
+
+- **bind failed!: Address already in use**:
+  - Encountered after crash or abrupt shutdown.
+  - Resolved by waiting or restarting terminal (will add `SO_REUSEADDR` later).
+
+### Day3_Notes & Insights
+
+- `recv()` must be carefully checked for multiple return cases in non-blocking mode.
+- `epoll` only notifies readiness; actual data logic must be done with care.
+- `send()` must use `.c_str()` with `.size()` to send entire message string.
+- Iterating over `unordered_map<int, ClientSession>` with structured binding is neat and readable.
+
+### Day3_Next Steps (Planned for Day 4)
+
+- Extend `ClientSession` to include input buffer.
+- Implement partial read handling and buffering until newline.
+- Design framing protocol (e.g., line-delimited messages).
+- Improve message structure: include nickname or ID (not just `fd`).
+- Consider modularizing event handlers for better readability and separation of concerns.

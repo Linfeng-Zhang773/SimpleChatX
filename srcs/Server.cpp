@@ -10,7 +10,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-
 using namespace std;
 
 Server::Server()
@@ -173,6 +172,62 @@ void Server::run_event_loop()
             }
             else
             {
+                // Handle client disconnection
+                if ((ev & EPOLLRDHUP) || (ev & EPOLLHUP))
+                {
+                    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == -1)
+                    {
+                        perror("epoll_ctl EPOLL_CTL_DEL failed");
+                    }
+
+                    close(fd);
+
+                    clients.erase(fd);
+                    cout << "[INFO] Client disconnected fd = :" << fd << endl;
+                }
+                else
+                {
+                    // Handle readable client socket (EPOLLIN)
+                    char buff[1024];
+                    int n = recv(fd, buff, sizeof(buff), 0);
+
+                    if (n == 0)
+                    {
+                        // Client closed the connection
+                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+                        close(fd);
+                        clients.erase(fd);
+                        cout << "[INFO] Client closed connection normally, fd = " << fd << endl;
+                        continue;
+                    }
+                    else if (n < 0)
+                    {
+                        // Error occurred during recv
+                        if (errno == EAGAIN || errno == EWOULDBLOCK)
+                            continue;
+                        else
+                        {
+                            perror("recv failed");
+                            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+                            close(fd);
+                            clients.erase(fd);
+                            cout << "[INFO] Client disconnected due to recv error, fd = " << fd << endl;
+                            continue;
+                        }
+                    }
+                    // Construct and broadcast the message to other clients
+                    string message = "[fd: " + to_string(fd) + "]: " + string(buff, n);
+                    cout << "[RECV]: " << message;
+
+                    for (auto& [other_fd, session] : clients)
+                    {
+                        if (other_fd != fd)
+                        {
+                            send(other_fd, message.c_str(), message.size(), 0);
+                        }
+                    }
+                }
+
                 // To be extended later: handle events on client sockets
                 cout << "[EPOLL] Event on unknown fd = " << fd << endl;
             }
