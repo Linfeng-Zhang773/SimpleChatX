@@ -126,8 +126,48 @@
 
 ### Day3_Next Steps (Planned for Day 4)
 
-- Extend `ClientSession` to include input buffer.
+- Extend `ClientSession` to include read buffer.
 - Implement partial read handling and buffering until newline.
 - Design framing protocol (e.g., line-delimited messages).
 - Improve message structure: include nickname or ID (not just `fd`).
 - Consider modularizing event handlers for better readability and separation of concerns.
+
+## Development Log — Day 4 (2025-06-30)
+
+### Day4_Tasks Completed
+
+- Added support for **buffered message input** to handle incomplete or multi-part messages from clients.
+- Introduced `read_buffer` in `ClientSession` to accumulate input data until a full message (ending in `\n`) is received.
+- Modified `Server::run_event_loop()`:
+  - On receiving data via `recv()`, append it to `read_buffer`.
+  - Check if `read_buffer` contains a full line (i.e., contains `\n`).
+  - Only when a complete line is received, broadcast it to other clients.
+  - Preserve remaining partial input in the buffer for the next read.
+
+### Day4_ClientSession Design
+
+- `ClientSession` now includes:
+  - `int fd`: file descriptor.
+  - `std::string read_buffer`: used to accumulate partial user input until newline.
+
+### Day4_Issues Encountered
+
+- Initially attempted to send message immediately after `recv()` without checking for newline — caused partial messages to be sent mid-typing.
+- Incorrectly checked for `"\0"` as message delimiter — fixed to use `\n` instead.
+- In `read_buffer.erase(0, i + 1);`, mistakenly used wrong variable name `i` instead of correct `pos` — corrected during testing.
+- Realized that `localhost` is not accessible by friends on other machines — clarified that they must use the host's LAN IP.
+
+### Day4_Notes & Insights
+
+- Learned that TCP is stream-oriented — data may arrive in chunks that don't align with logical message boundaries.
+- Buffered input is necessary for correct message framing; it's dangerous to assume one `recv()` == one message.
+- Realized importance of testing edge cases such as slow typing, multi-line messages, and long pauses.
+- Understood that telnet on another computer cannot connect to `localhost`; must use the actual IP address of the host.
+
+### Day4_Next Steps (Planned for Day 5)
+
+- Improve robustness of message broadcasting:
+  - Add error handling around `send()`.
+  - Detect and handle broken pipes or disconnected clients during send.
+- Add timestamp or username support (optional, for logging/user distinction).
+- Explore how to support command handling or admin messages in future design.

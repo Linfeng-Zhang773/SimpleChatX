@@ -215,15 +215,22 @@ void Server::run_event_loop()
                             continue;
                         }
                     }
-                    // Construct and broadcast the message to other clients
-                    string message = "[fd: " + to_string(fd) + "]: " + string(buff, n);
-                    cout << "[RECV]: " << message;
-
-                    for (auto& [other_fd, session] : clients)
+                    clients[fd].read_buffer += std::string(buff, n);
+                    size_t pos;
+                    while ((pos = clients[fd].read_buffer.find('\n')) != std::string::npos)
                     {
-                        if (other_fd != fd)
+                        std::string msg = clients[fd].read_buffer.substr(0, pos + 1);
+                        clients[fd].read_buffer.erase(0, pos + 1);
+                        // Construct and broadcast the message to other clients
+                        string message = "[fd: " + to_string(fd) + "]: " + msg;
+                        cout << "[RECV]: " << message;
+
+                        for (auto& [other_fd, session] : clients)
                         {
-                            send(other_fd, message.c_str(), message.size(), 0);
+                            if (other_fd != fd)
+                            {
+                                send(other_fd, message.c_str(), message.size(), 0);
+                            }
                         }
                     }
                 }
