@@ -189,7 +189,7 @@ void Server::run_event_loop()
                 {
                     // Handle readable client socket (EPOLLIN)
                     char buff[1024];
-                    int n = recv(fd, buff, sizeof(buff), 0);
+                    ssize_t n = recv(fd, buff, sizeof(buff), 0);
 
                     if (n == 0)
                     {
@@ -229,7 +229,15 @@ void Server::run_event_loop()
                         {
                             if (other_fd != fd)
                             {
-                                send(other_fd, message.c_str(), message.size(), 0);
+                                if (send(other_fd, message.c_str(), message.size(), 0) == -1)
+                                {
+                                    perror("send message failed!");
+                                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, other_fd, nullptr);
+                                    close(other_fd);
+                                    clients.erase(other_fd);
+                                    cout << "[INFO] Client disconnected due to send error, fd = " << other_fd << endl;
+                                    continue;
+                                }
                             }
                         }
                     }

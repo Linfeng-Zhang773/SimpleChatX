@@ -143,6 +143,9 @@
   - Check if `read_buffer` contains a full line (i.e., contains `\n`).
   - Only when a complete line is received, broadcast it to other clients.
   - Preserve remaining partial input in the buffer for the next read.
+  - Improve robustness of message broadcasting:
+  - Add error handling around `send()`.
+  - Detect and handle broken pipes or disconnected clients during send.
 
 ### Day4_ClientSession Design
 
@@ -166,8 +169,5 @@
 
 ### Day4_Next Steps (Planned for Day 5)
 
-- Improve robustness of message broadcasting:
-  - Add error handling around `send()`.
-  - Detect and handle broken pipes or disconnected clients during send.
 - Add timestamp or username support (optional, for logging/user distinction).
 - Explore how to support command handling or admin messages in future design.
