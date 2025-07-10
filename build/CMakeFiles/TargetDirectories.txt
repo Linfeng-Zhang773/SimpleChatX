@@ -1,3 +1,0 @@
-/mnt/c/Users/linfe/SimpleChatX/build/CMakeFiles/ChatServer.dir
-/mnt/c/Users/linfe/SimpleChatX/build/CMakeFiles/edit_cache.dir
-/mnt/c/Users/linfe/SimpleChatX/build/CMakeFiles/rebuild_cache.dir
