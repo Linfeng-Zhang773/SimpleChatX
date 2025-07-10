@@ -115,137 +115,122 @@ void Server::setup_epoll()
  * In the current version (Day 2), this loop only detects readiness and logs the events.
  * Connection acceptance and client handling will be added in Day 3.
  */
-
 void Server::run_event_loop()
 {
     const int MAX_EVENTS = 10;
     struct epoll_event events[MAX_EVENTS];
+
     cout << "Entering event loop..." << endl;
-    while (1)
+    while (true)
     {
-        // Wait for events indefinitely (-1 timeout)
         int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (event_count == -1)
         {
             perror("epoll_wait failed!");
-            continue; // Continue loop even if epoll_wait fails
+            continue;
         }
-        cout << "epoll_wait returned " << event_count << " event(s)" << endl;
-        // Loop through triggered events
+
         for (int i = 0; i < event_count; ++i)
         {
             int fd = events[i].data.fd;
             uint32_t ev = events[i].events;
 
-            // New client trying to connect to the listening socket
             if (fd == listen_fd && (ev & EPOLLIN))
             {
-                cout << "[EPOLL] Ready to accept new connection on listen_fd = " << listen_fd << endl;
-                // Declare variables for accepting a new client connection
-                int connect_fd;
-                struct sockaddr_in cliaddr;
-                socklen_t len = sizeof(cliaddr);
-                // Accept an incoming client connection
-                connect_fd = accept(listen_fd, (struct sockaddr*)&cliaddr, &len);
-                if (connect_fd == -1)
-                {
-                    if (errno != EAGAIN && errno != EWOULDBLOCK)
-                        perror("accept failed");
-                    continue;
-                }
-                // if accepted, create a pair as {connect_fd,Client} and stored into map
-                clients[connect_fd] = ClientSession(connect_fd);
-                // Set the accepted socket to non-blocking mode
-                set_Nonblocking(connect_fd);
-                // Prepare the epoll_event structure to monitor the new socket
-                struct epoll_event client_event;
-                client_event.events = EPOLLIN | EPOLLRDHUP; // Monitor for read events and disconnection
-                client_event.data.fd = connect_fd;          // Store the socket fd in the event data
-                // Add the new socket to the epoll instance
-                int res = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connect_fd, &client_event);
-                if (res == -1)
-                {
-                    perror("register events failed!");
-                    exit(EXIT_FAILURE);
-                }
-                cout << "[INFO] Accepted new client: fd = " << connect_fd << endl;
+                handle_new_connection();
             }
-            else
+            else if ((ev & EPOLLRDHUP) || (ev & EPOLLHUP))
             {
-                // Handle client disconnection
-                if ((ev & EPOLLRDHUP) || (ev & EPOLLHUP))
-                {
-                    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == -1)
-                    {
-                        perror("epoll_ctl EPOLL_CTL_DEL failed");
-                    }
-
-                    close(fd);
-
-                    clients.erase(fd);
-                    cout << "[INFO] Client disconnected fd = :" << fd << endl;
-                }
-                else
-                {
-                    // Handle readable client socket (EPOLLIN)
-                    char buff[1024];
-                    ssize_t n = recv(fd, buff, sizeof(buff), 0);
-
-                    if (n == 0)
-                    {
-                        // Client closed the connection
-                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-                        close(fd);
-                        clients.erase(fd);
-                        cout << "[INFO] Client closed connection normally, fd = " << fd << endl;
-                        continue;
-                    }
-                    else if (n < 0)
-                    {
-                        // Error occurred during recv
-                        if (errno == EAGAIN || errno == EWOULDBLOCK)
-                            continue;
-                        else
-                        {
-                            perror("recv failed");
-                            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-                            close(fd);
-                            clients.erase(fd);
-                            cout << "[INFO] Client disconnected due to recv error, fd = " << fd << endl;
-                            continue;
-                        }
-                    }
-                    clients[fd].read_buffer += std::string(buff, n);
-                    size_t pos;
-                    while ((pos = clients[fd].read_buffer.find('\n')) != std::string::npos)
-                    {
-                        std::string msg = clients[fd].read_buffer.substr(0, pos + 1);
-                        clients[fd].read_buffer.erase(0, pos + 1);
-                        // Construct and broadcast the message to other clients
-                        string message = "[fd: " + to_string(fd) + "]: " + msg;
-                        cout << "[RECV]: " << message;
-
-                        for (auto& [other_fd, session] : clients)
-                        {
-                            if (other_fd != fd)
-                            {
-                                if (send(other_fd, message.c_str(), message.size(), 0) == -1)
-                                {
-                                    perror("send message failed!");
-                                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, other_fd, nullptr);
-                                    close(other_fd);
-                                    clients.erase(other_fd);
-                                    cout << "[INFO] Client disconnected due to send error, fd = " << other_fd << endl;
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // To be extended later: handle events on client sockets
-                cout << "[EPOLL] Event on unknown fd = " << fd << endl;
+                handle_client_disconnection(fd);
             }
+            else if (ev & EPOLLIN)
+            {
+                handle_client_input(fd);
+            }
+        }
+    }
+}
+void Server::handle_new_connection()
+{
+    while (1)
+    {
+        sockaddr_in cliaddr;
+        socklen_t len = sizeof(cliaddr);
+        int connect_fd = accept(listen_fd, (sockaddr*)&cliaddr, &len);
+        if (connect_fd == -1)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            perror("accept failed");
+            return;
+        }
+
+        set_Nonblocking(connect_fd);
+        clients[connect_fd] = ClientSession(connect_fd);
+
+        epoll_event ev;
+        ev.events = EPOLLIN | EPOLLRDHUP;
+        ev.data.fd = connect_fd;
+        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connect_fd, &ev);
+
+        const char* welcome =
+            "Welcome to ChatServer!\n"
+            "Please choose an option:\n"
+            "  /reg <username>    to register a new user\n"
+            "  /login <username>  to log in with an existing user\n\n";
+        send(connect_fd, welcome, strlen(welcome), 0);
+
+        cout << "[INFO] New client connected: fd = " << connect_fd << endl;
+    }
+}
+
+void Server::handle_client_disconnection(int fd)
+{
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+    close(fd);
+    clients.erase(fd);
+    cout << "[INFO] Client disconnected: fd = " << fd << endl;
+}
+
+void Server::handle_client_input(int fd)
+{
+    char buffer[1024];
+    ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
+
+    if (n == 0)
+    {
+        handle_client_disconnection(fd);
+        return;
+    }
+    else if (n < 0)
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+        perror("recv failed");
+        handle_client_disconnection(fd);
+        return;
+    }
+
+    ClientSession& session = clients[fd];
+    session.read_buffer += std::string(buffer, n);
+
+    size_t pos;
+    while ((pos = session.read_buffer.find('\n')) != std::string::npos)
+    {
+        std::string msg = session.read_buffer.substr(0, pos + 1);
+        session.read_buffer.erase(0, pos + 1);
+        std::string full_msg = "[fd: " + std::to_string(fd) + "] " + msg;
+        cout << "[RECV] " << full_msg;
+        broadcast_message(fd, full_msg);
+    }
+}
+void Server::broadcast_message(int from_fd, const std::string& msg)
+{
+    for (auto& [fd, session] : clients)
+    {
+        if (fd == from_fd) continue;
+        if (send(fd, msg.c_str(), msg.size(), 0) == -1)
+        {
+            perror("send failed");
+            handle_client_disconnection(fd);
         }
     }
 }

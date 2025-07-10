@@ -171,3 +171,18 @@
 
 - Add timestamp or username support (optional, for logging/user distinction).
 - Explore how to support command handling or admin messages in future design.
+
+## Development Log — Day 5 (2025-07-09)
+
+### Day5_Tasks Completed
+
+- add CMakeLists.txt file and tested successfully for building with it
+- 
+
+### Day5_ClientSession Design
+
+### Day5_Issues Encountered
+
+### Day5_Notes & Insights
+
+### Day5_Next Steps (Planned for Day 6)
