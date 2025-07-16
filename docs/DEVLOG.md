@@ -7,12 +7,12 @@
 - Initialized project directory structure with all required folders and empty files.
 - Created `Makefile` to support building the project.
 - Implemented minimal `Server` class framework (`Server.hpp` and `Server.cpp`).
-- Wrote `main.cpp` with basic startup code that instantiates `Server` and calls `run` method.
+- Wrote `main.cpp` with basic startup code that initilizes `Server` and calls `run` method.
 - Successfully compiled and ran the project, verifying build system and initial framework.
 
 ### Issues encountered
 
-- None (or describe any problems you ran into and how you resolved them)
+- None
 
 ### Next steps
 
@@ -57,7 +57,6 @@
 - Initially forgot `main()` entry point — server failed to launch.
 - Encountered repeated epoll triggers before `accept()` was added:
   - Learned that `EPOLLIN` will persist until pending connections are handled via `accept()`.
-
 - Debugged `ClientSession(fd)` constructor error:
   - Error due to missing default constructor when inserting into map.
   - Fixed by passing required `fd` during insertion.
@@ -172,17 +171,73 @@
 - Add timestamp or username support (optional, for logging/user distinction).
 - Explore how to support command handling or admin messages in future design.
 
-## Development Log — Day 5 (2025-07-09)
+## Development Log — Day 5 (2025-07-15)
 
 ### Day5_Tasks Completed
 
-- add CMakeLists.txt file and tested successfully for building with it
-- 
+- Built **basic user authentication system**:  
+  Users must now register (`/reg <username>`) or log in (`/login <username>`) before sending messages.  
+  Server rejects messages from unauthenticated users.
+- Implemented `ClientSession` **status tracking** using `AuthStatus` enum (`NONE`, `AUTHORIZED`).
+- Refactored `handle_client_input` to process commands (`/reg`, `/login`, `/quit`) and normal messages more clearly.
+- Added `/quit` command support — cleanly disconnects clients.
+- Blocked **already authenticated users** from issuing `/reg` or `/login` again.
+- Improved message formatting:
+  - Broadcast messages now show as `[username]: <message>`.
+  - Server also echoes messages back to the sender for better design.
+- Fixed **partial message issues** with buffered input via `read_buffer`.
+- Enhanced validation for usernames:
+  - Disallowed empty names, overly long names, or names containing whitespace.
+- Added `/quit` to the welcome prompt.  
+  Fixed missing line caused by incorrect C++ string literal usage.
+- Confirmed **telnet** works for multi-client testing; verified correct behavior with concurrent users.
+- Added `CMakeLists.txt` file to support **CMake-based builds**; tested and confirmed successful compilation.
+
+---
 
 ### Day5_ClientSession Design
 
+- `enum class AuthStatus`: a enum class for status
+- `int fd`: client's socket file descriptor.
+- `std::string read_buffer`: accumulated message buffer.
+- `std::string nickname`: username set upon registration/login.
+- `AuthStatus status`: indicates if the client is authenticated (`NONE`, `AUTHORIZED`).
+
+---
+
 ### Day5_Issues Encountered
+
+- **Welcome message truncation**: caused by incorrect multiline string (missing `+=` or unassigned block) — fixed using `std::string` concatenation.
+- **Login logic executed when already authenticated** — added guard to block repeated `/reg` or `/login`.
+- **Partial input misparsed** (e.g., command fragment sent prematurely) — fixed using `read_buffer` and newline detection.
+- Forgot to `pop_back()` `\r` from telnet input — caused incorrect command matching — fixed.
+- Misunderstood `CMake` vs. `make` coexistence — clarified that CMake generates Makefiles and should not be mixed with raw `make`.
+
+---
 
 ### Day5_Notes & Insights
 
-### Day5_Next Steps (Planned for Day 6)
+- Telnet input ends with `\r\n` — trimming `\r` is crucial for correct command parsing.
+- A simple user auth system isolates unauthenticated input effectively.
+- Directly processing `recv()` data is error-prone — **buffering and delimiter parsing are essential**.
+- CMake greatly improves **build scalability and readability**.
+- Echoing messages to the sender enhances user feedback experience.
+- Explicit enums like `AuthStatus` make user state transitions **safe and debuggable**.
+
+---
+
+### Day5_Next Steps (Planned for Later tasks)
+
+- Add **password support** for `/reg <username> <password>` and `/login <username> <password>`.
+- Use **SQLite** API to persist:
+  - User credentials
+  - Chat logs
+- Implement **private messaging**: `/msg <username> <message>`
+- Support **chat history replay** via `/history` (last N messages)
+- Build **thread pool** to handle concurrent message parsing & I/O
+- Enable **group chat rooms**: `/join <group>`, `/gmsg <group> <message>`
+- Support **session recovery** via `/reconnect <username> <password>`
+- Implement **graceful shutdown**: catch `SIGINT`, close sockets, flush buffers
+- Add **rate limiting / abuse protection**
+
+---

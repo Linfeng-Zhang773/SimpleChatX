@@ -1,3 +1,4 @@
+//introduces all needed libaraies 
 #include "../includes/Server.hpp"
 #include "../includes/ClientSession.hpp"
 #include "../includes/Utils.hpp"
@@ -12,11 +13,17 @@
 
 using namespace std;
 
+/**
+ * @brief A constructor for server class, print Server set up if succeed
+ */
 Server::Server()
 {
     cout << "Server set up" << endl;
 }
 
+/**
+ * @brief A destructor for destroying server class, print Server shut down afterward
+ */
 Server::~Server()
 {
     cout << "Server shut down" << endl;
@@ -106,43 +113,54 @@ void Server::setup_epoll()
 }
 
 /**
- * @brief Start the main event loop using epoll.
+ * @brief Starts the main event loop of the server using epoll.
  *
- * Continuously waits for I/O events on registered file descriptors using epoll_wait.
- * Currently only the listening socket is registered. When epoll indicates it is ready
- * for reading (EPOLLIN), a new client is trying to connect.
+ * This loop continuously waits for I/O events on all registered file descriptors (sockets),
+ * using `epoll_wait`. It efficiently handles:
+ * - New incoming connections (on `listen_fd`)
+ * - Incoming data from clients
+ * - Client disconnections
  *
- * In the current version (Day 2), this loop only detects readiness and logs the events.
- * Connection acceptance and client handling will be added in Day 3.
+ * Delegates actual logic to helper member functions:
+ * - `handle_new_connection()` for accept()
+ * - `handle_client_input()` for recv()
+ * - `handle_client_disconnection()` for closing sockets
+ *
+ * The loop runs indefinitely and forms the backbone of the server’s non-blocking I/O model.
  */
 void Server::run_event_loop()
 {
-    const int MAX_EVENTS = 10;
-    struct epoll_event events[MAX_EVENTS];
+    const int MAX_EVENTS = 10;                    // Max number of events to wait for per epoll_wait call
+    struct epoll_event events[MAX_EVENTS];        // Event buffer
 
     cout << "Entering event loop..." << endl;
-    while (true)
+    while (1)
     {
+        // Wait for I/O events (blocking indefinitely until at least one event occurs)
         int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (event_count == -1)
         {
             perror("epoll_wait failed!");
-            continue;
+            continue;  // On error, skip this iteration and continue listening
         }
 
+        // Process each triggered event
         for (int i = 0; i < event_count; ++i)
         {
             int fd = events[i].data.fd;
             uint32_t ev = events[i].events;
 
+            // Case 1: New incoming connection on listening socket
             if (fd == listen_fd && (ev & EPOLLIN))
             {
                 handle_new_connection();
             }
+            // Case 2: Client disconnected (peer hang up or error)
             else if ((ev & EPOLLRDHUP) || (ev & EPOLLHUP))
             {
                 handle_client_disconnection(fd);
             }
+            // Case 3: Incoming data from an already connected client
             else if (ev & EPOLLIN)
             {
                 handle_client_input(fd);
@@ -150,6 +168,18 @@ void Server::run_event_loop()
         }
     }
 }
+
+
+/**
+ * @brief Accepts new incoming client connections in a non-blocking loop.
+ *
+ * Uses accept() repeatedly to handle all pending connections until EAGAIN.
+ * Each new client:
+ * - Is set to non-blocking mode
+ * - Added to epoll monitoring
+ * - Stored in the clients map as a ClientSession
+ * - Receives a welcome message
+ */
 void Server::handle_new_connection()
 {
     while (1)
@@ -164,25 +194,36 @@ void Server::handle_new_connection()
             return;
         }
 
-        set_Nonblocking(connect_fd);
-        clients[connect_fd] = ClientSession(connect_fd);
+        set_Nonblocking(connect_fd);  // Make the socket non-blocking
+        clients[connect_fd] = ClientSession(connect_fd);  // Add new client session
 
+        // Register the client socket to epoll
         epoll_event ev;
         ev.events = EPOLLIN | EPOLLRDHUP;
         ev.data.fd = connect_fd;
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connect_fd, &ev);
 
-        const char* welcome =
-            "Welcome to ChatServer!\n"
-            "Please choose an option:\n"
-            "  /reg <username>    to register a new user\n"
-            "  /login <username>  to log in with an existing user\n\n";
-        send(connect_fd, welcome, strlen(welcome), 0);
+        // Send welcome message with available commands
+        std::string welcome =
+            "Welcome to ChatServer!\r\n"
+            "Please choose an option:\r\n"
+            "  /reg <username>    to register a new user\r\n"
+            "  /login <username>  to log in with an existing user\r\n"
+            "  /quit              to close the chat\r\n\r\n";
+        send(connect_fd, welcome.c_str(), welcome.size(), 0);
 
         cout << "[INFO] New client connected: fd = " << connect_fd << endl;
     }
 }
 
+/**
+ * @brief Handles a client's disconnection.
+ *
+ * Cleans up the client's session:
+ * - Removes it from epoll
+ * - Closes the socket
+ * - Erases the session from the clients map
+ */
 void Server::handle_client_disconnection(int fd)
 {
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
@@ -191,11 +232,24 @@ void Server::handle_client_disconnection(int fd)
     cout << "[INFO] Client disconnected: fd = " << fd << endl;
 }
 
+/**
+ * @brief Handles incoming data from a client socket.
+ *
+ * Performs:
+ * - Reading and buffering partial input
+ * - Parsing complete lines ending with '\n'
+ * - Processing commands like /reg, /login, /quit
+ * - Blocking unauthenticated users from sending chat messages
+ * - Broadcasting valid chat messages
+ *
+ * Uses newline as message delimiter; handles \r cleanup for Telnet.
+ */
 void Server::handle_client_input(int fd)
 {
     char buffer[1024];
     ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
 
+    // Handle disconnection or error
     if (n == 0)
     {
         handle_client_disconnection(fd);
@@ -209,24 +263,124 @@ void Server::handle_client_input(int fd)
         return;
     }
 
+    // Append new data to session buffer
     ClientSession& session = clients[fd];
     session.read_buffer += std::string(buffer, n);
 
     size_t pos;
+    // Process all complete lines in the buffer
     while ((pos = session.read_buffer.find('\n')) != std::string::npos)
     {
-        std::string msg = session.read_buffer.substr(0, pos + 1);
+        std::string msg = session.read_buffer.substr(0, pos);
         session.read_buffer.erase(0, pos + 1);
-        std::string full_msg = "[fd: " + std::to_string(fd) + "] " + msg;
-        cout << "[RECV] " << full_msg;
-        broadcast_message(fd, full_msg);
+
+        // Remove \r if present (Telnet sends \r\n)
+        if (!msg.empty() && msg.back() == '\r')
+        {
+            msg.pop_back();
+        }
+
+        // Handle quit command
+        if (msg == "/quit")
+        {
+            std::string reply = "Bye! Disconnecting...\r\n";
+            send(fd, reply.c_str(), reply.size(), 0);
+            handle_client_disconnection(fd);
+            return;
+        }
+
+        // Authentication required before messaging
+        if (session.status != AuthStatus::AUTHORIZED)
+        {
+            if (msg.compare(0, 5, "/reg ") == 0)
+            {
+                std::string username = msg.substr(5);
+                if (!username.empty() && username.length() <= 20 && username.find(' ') == std::string::npos)
+                {
+                    if (registered_users.count(username))
+                    {
+                        std::string reply = "Username already taken.\r\n";
+                        send(fd, reply.c_str(), reply.size(), 0);
+                    }
+                    else
+                    {
+                        // Register user
+                        session.nickname = username;
+                        session.status = AuthStatus::AUTHORIZED;
+                        registered_users.insert(username);
+                        nickname_map[username] = fd;
+
+                        std::cout << "[DEBUG] Registered nickname = " << username << std::endl;
+
+                        std::string reply = "Registered successfully as [" + username + "]\r\n";
+                        send(fd, reply.c_str(), reply.size(), 0);
+                    }
+                }
+                else
+                {
+                    std::string reply = "Username is invalid.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                }
+            }
+            else if (msg.compare(0, 7, "/login ") == 0)
+            {
+                std::string username = msg.substr(7);
+                if (!registered_users.count(username))
+                {
+                    std::string reply = "Username not found. Please register first.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                }
+                else
+                {
+                    session.nickname = username;
+                    session.status = AuthStatus::AUTHORIZED;
+                    nickname_map[username] = fd;
+
+                    std::cout << "[DEBUG] Logged in nickname = " << username << std::endl;
+
+                    std::string reply = "Logged in successfully as [" + username + "]\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                }
+            }
+            else
+            {
+                const char* reply = "Please register (/reg <username>) or login (/login <username>) first.\r\n";
+                send(fd, reply, strlen(reply), 0);
+            }
+            return;
+        }
+        else
+        {
+            // Block redundant auth commands
+            if (msg.compare(0, 5, "/reg ") == 0 || msg.compare(0, 7, "/login ") == 0)
+            {
+                const char* reply = "You are already logged in. Cannot use /reg or /login again.\r\n";
+                send(fd, reply, strlen(reply), 0);
+                return;
+            }
+
+            // Broadcast message to all users (including sender)
+            std::string full_msg = "[" + session.nickname + "]: " + msg + "\r\n";
+            std::cout << "[RECV] " << full_msg;
+            broadcast_message(fd, full_msg);
+        }
     }
 }
+
+/**
+ * @brief Sends a message to all connected clients.
+ *
+ * Broadcasts messages to every client in `clients`, including the sender.
+ * On send failure (e.g., broken pipe), the client is disconnected.
+ *
+ * @param from_fd The sender's file descriptor (used for logging or future exclusions).
+ * @param msg     The formatted message to send.
+ */
 void Server::broadcast_message(int from_fd, const std::string& msg)
 {
     for (auto& [fd, session] : clients)
     {
-        if (fd == from_fd) continue;
+        // Uncomment to exclude sender: if (fd == from_fd) continue;
         if (send(fd, msg.c_str(), msg.size(), 0) == -1)
         {
             perror("send failed");
@@ -235,6 +389,13 @@ void Server::broadcast_message(int from_fd, const std::string& msg)
     }
 }
 
+/**
+ * @brief Initializes and starts the server.
+ *
+ * - Binds to the server port (create_and_bind)
+ * - Sets up epoll (setup_epoll)
+ * - Starts the main event loop (run_event_loop)
+ */
 void Server::run_server()
 {
     cout << "Server activited" << endl;
