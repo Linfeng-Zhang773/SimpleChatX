@@ -246,18 +246,38 @@
 
 ### Day6_Tasks Completed
 
-- Implemented `start_server.sh` and `start_client.sh` scripts to run the command and successfully tested.
+- Implemented `start_server.sh` and `start_client.sh` scripts to launching commands in the server and client terminals.
+- Refactored `UserManager` module: moved some logics from `Server` to `UserManager`.
+- Successfully decoupled `ClientSession` management from `Server`, making code more orgnaized.
+- Fixed issues after refactor.
+- Fully tested the refactored code and verified correct server-client interactions after it.
 
 ---
 
 ### Day6_Issues Encountered
 
+- After moving `clients` map into `UserManager`, message receiving failed due to missing read_buffer update logic.
+- Required syncing between `UserManager` and `Server` to ensure client connections were properly tracked.
+- Initial confusion over whether epoll and thread pool functionalities were overlapping.
+
 ---
 
 ### Day6_Notes & Insights
 
+- Keeping all user state management inside `UserManager` results in much cleaner and centralized code.
+- When performing major module refactors, always retest the functionalities after any modifications.
+- Modularizing early (like `UserManager`, `ClientSession`) sets up cleaner future integration for persistence and advanced features like private/group chat.
+
 ---
 
-### Day6_Next Steps (Planned for Later tasks)
+### Day6_Next Steps (Planned for Later Tasks)
+
+1. **Task 1**: Add password support to registration and login commands (`/reg <username> <password>`)
+2. **Task 2**: Integrate thread pool for decoupled message handling and concurrent processing
+3. **Task 3**: Implement private messaging: `/to <username> <message>`
+4. **Task 4**: Implement group chat with group join/create/broadcast commands
+5. **Task 5**: Add disconnect-reconnect & session recovery
+6. **Task 6**: Persist chat logs to SQLite or local file
+7. **Task 7**: Add history view command (e.g., `/history` to retrieve recent messages)
 
 ---

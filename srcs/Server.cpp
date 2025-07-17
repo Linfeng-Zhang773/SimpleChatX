@@ -193,8 +193,8 @@ void Server::handle_new_connection()
             return;
         }
 
-        set_Nonblocking(connect_fd);                     // Make the socket non-blocking
-        clients[connect_fd] = ClientSession(connect_fd); // Add new client session
+        set_Nonblocking(connect_fd);       // Make the socket non-blocking
+        userManager.addClient(connect_fd); // Add new client session
 
         // Register the client socket to epoll
         epoll_event ev;
@@ -227,7 +227,8 @@ void Server::handle_client_disconnection(int fd)
 {
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
-    clients.erase(fd);
+    userManager.removeClient(fd);
+    userManager.logoutUser(fd);
     cout << "[INFO] Client disconnected: fd = " << fd << endl;
 }
 
@@ -263,7 +264,9 @@ void Server::handle_client_input(int fd)
     }
 
     // Append new data to session buffer
-    ClientSession& session = clients[fd];
+    if (!userManager.hasClient(fd)) return;
+    ClientSession& session = userManager.getClientSession(fd);
+
     session.read_buffer += std::string(buffer, n);
 
     size_t pos;
@@ -289,58 +292,83 @@ void Server::handle_client_input(int fd)
         }
 
         // Authentication required before messaging
-        if (session.status != AuthStatus::AUTHORIZED)
+        if (!userManager.isLoggedIn(fd))
         {
             if (msg.compare(0, 5, "/reg ") == 0)
             {
-                std::string username = msg.substr(5);
-                if (!username.empty() && username.length() <= 20 && username.find(' ') == std::string::npos)
+                std::istringstream iss(msg.substr(5));
+                std::string username, password;
+                iss >> username >> password;
+
+                if (username.empty() || password.empty())
                 {
-                    if (registered_users.count(username))
-                    {
-                        std::string reply = "Username already taken.\r\n";
-                        send(fd, reply.c_str(), reply.size(), 0);
-                    }
-                    else
-                    {
-                        // Register user
-                        session.nickname = username;
-                        session.status = AuthStatus::AUTHORIZED;
-                        registered_users.insert(username);
-                        nickname_map[username] = fd;
-
-                        std::cout << "[DEBUG] Registered nickname = " << username << std::endl;
-
-                        std::string reply = "Registered successfully as [" + username + "]\r\n";
-                        send(fd, reply.c_str(), reply.size(), 0);
-                    }
+                    std::string reply = "Usage: /reg <username> <password>\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                    return;
+                }
+                if (username.length() < 2 || username.length() > 20)
+                {
+                    std::string reply = "Username must be 2~20 characters.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                    return;
+                }
+                if (password.length() < 6 || password.length() > 20)
+                {
+                    std::string reply = "Password must be 6~20 characters.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                    return;
+                }
+                if (userManager.registerUser(fd, username, password))
+                {
+                    session.nickname = username;
+                    session.status = AuthStatus::AUTHORIZED;
+                    std::string reply = "Registered successfully as [" + username + "]\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
                 }
                 else
                 {
-                    std::string reply = "Username is invalid.\r\n";
+                    std::string reply = "Username already taken or invalid.\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                 }
             }
             else if (msg.compare(0, 7, "/login ") == 0)
             {
-                std::string username = msg.substr(7);
-                if (!registered_users.count(username))
+                std::istringstream iss(msg.substr(7));
+                std::string username, password;
+                iss >> username >> password;
+
+                if (username.empty() || password.empty())
                 {
-                    std::string reply = "Username not found. Please register first.\r\n";
+                    std::string reply = "Usage: /login <username> <password>\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                    return;
+                }
+                if (username.length() < 3 || username.length() > 16)
+                {
+                    std::string reply = "Username must be 3~16 characters.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                    return;
+                }
+                if (password.length() < 6 || password.length() > 32)
+                {
+                    std::string reply = "Password must be 6~32 characters.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                    return;
+                }
+                if (userManager.loginUser(fd, username, password))
+                {
+                    session.nickname = username;
+                    session.status = AuthStatus::AUTHORIZED;
+                    std::string reply = "Logged in successfully as [" + username + "]\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                 }
                 else
                 {
-                    session.nickname = username;
-                    session.status = AuthStatus::AUTHORIZED;
-                    nickname_map[username] = fd;
-
-                    std::cout << "[DEBUG] Logged in nickname = " << username << std::endl;
-
-                    std::string reply = "Logged in successfully as [" + username + "]\r\n";
+                    std::string reply = "Login failed. Username not found or already logged in.\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                 }
             }
+
             else
             {
                 const char* reply = "Please register (/reg <username>) or login (/login <username>) first.\r\n";
@@ -377,7 +405,7 @@ void Server::handle_client_input(int fd)
  */
 void Server::broadcast_message(int from_fd, const std::string& msg)
 {
-    for (auto& [fd, session] : clients)
+    for (auto& [fd, session] : userManager.getAllClients())
     {
         // Uncomment to exclude sender: if (fd == from_fd) continue;
         if (send(fd, msg.c_str(), msg.size(), 0) == -1)

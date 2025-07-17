@@ -1,21 +1,19 @@
 #ifndef SERVER_HPP
 #define SERVER_HPP
 #include "../includes/ClientSession.hpp"
-#include <unordered_map>
-#include <unordered_set>
+#include "UserManager.hpp"
 /**
  * @class Server
- * @brief A server class for handling all backend manipulations.
+ * @brief A server class for handling server logics
  */
 class Server
 {
 private:
+    UserManager userManager;
+
 public:
     int listen_fd;
     int epoll_fd;
-    std::unordered_map<int, ClientSession> clients;     // fd->session
-    std::unordered_map<std::string, int> nickname_map;  // nickname->fd
-    std::unordered_set<std::string> registered_users; // registered usernames
     Server();
     ~Server();
     void create_and_bind();

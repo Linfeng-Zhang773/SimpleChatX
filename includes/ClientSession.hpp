@@ -1,10 +1,9 @@
 #ifndef CLIENTSESSION_HPP
 #define CLIENTSESSION_HPP
 #include <string>
-
 /**
  * @enum AuthStatus
- * @brief A enum class represents user's current status, 
+ * @brief A enum class represents user's current status,
  * NONE for user hasn't registerd or logged in
  * AUTHORIZED for user has registed or logged in
  */
