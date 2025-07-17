@@ -281,3 +281,38 @@
 7. **Task 7**: Add history view command (e.g., `/history` to retrieve recent messages)
 
 ---
+
+## Development Log — Day 7
+
+### Day7_Tasks Completed
+
+- Completed task 1: including following
+- Enhanced the user registration and login system to support password verification.
+- Modified `/reg` and `/login` commands to accept both username and password.
+- Added input validation for username and password formats (length constraints).
+- Updated `UserManager` to store and validate user passwords using `password_map`.
+- Prevented duplicate registrations and enforced login rules.
+- Improved `handle_client_input` logic to parse and validate credentials.
+
+---
+
+### Day7_Issues Encountered
+
+- Discovered that registered users cannot persist after server restarts since all data is stored in memory.
+- Noticed that even if the server is still running, disconnecting and reconnecting a client causes login failure due to session state loss.
+
+---
+
+### Day7_Notes & Insights
+
+- Session state is currently tied to the TCP connection (file descriptor), so disconnecting removes the client’s session and nickname mapping.
+- Registered user credentials are held in memory (`unordered_map`), so persistence will require database integration (maybe SQLite).
+- Adding password authentication improves the basic security model and sets the stage for session recovery and persistent user accounts.
+
+---
+
+### Day7_Next Steps (Planned for Later tasks)
+
+- Add persistent storage (SQLite) for registered users and hashed passwords.
+- Begin Task 2: Integrate thread pool for decoupled message handling and concurrent processing
+- Plan support for session recovery upon client reconnection.

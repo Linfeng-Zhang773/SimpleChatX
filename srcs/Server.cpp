@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include <netinet/in.h>
+#include <sstream>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -206,8 +207,8 @@ void Server::handle_new_connection()
         std::string welcome =
             "Welcome to ChatServer!\r\n"
             "Please choose an option:\r\n"
-            "  /reg <username>    to register a new user\r\n"
-            "  /login <username>  to log in with an existing user\r\n"
+            "  /reg <username> <password>   to register a new user\r\n"
+            "  /login <username> <password> to log in with an existing user\r\n"
             "  /quit              to close the chat\r\n\r\n";
         send(connect_fd, welcome.c_str(), welcome.size(), 0);
 
@@ -343,15 +344,15 @@ void Server::handle_client_input(int fd)
                     send(fd, reply.c_str(), reply.size(), 0);
                     return;
                 }
-                if (username.length() < 3 || username.length() > 16)
+                if (username.length() < 2 || username.length() > 20)
                 {
-                    std::string reply = "Username must be 3~16 characters.\r\n";
+                    std::string reply = "Username must be 2~20 characters.\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                     return;
                 }
-                if (password.length() < 6 || password.length() > 32)
+                if (password.length() < 6 || password.length() > 20)
                 {
-                    std::string reply = "Password must be 6~32 characters.\r\n";
+                    std::string reply = "Password must be 6~20 characters.\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                     return;
                 }
@@ -364,14 +365,14 @@ void Server::handle_client_input(int fd)
                 }
                 else
                 {
-                    std::string reply = "Login failed. Username not found or already logged in.\r\n";
+                    std::string reply = "Login failed. Please check your username and password.\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                 }
             }
 
             else
             {
-                const char* reply = "Please register (/reg <username>) or login (/login <username>) first.\r\n";
+                const char* reply = "Please register (/reg <username> <password>) or login (/login <username> <password>) first.\r\n";
                 send(fd, reply, strlen(reply), 0);
             }
             return;
