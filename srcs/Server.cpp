@@ -1,4 +1,4 @@
-//introduces all needed libaraies 
+// introduces all needed libaraies
 #include "../includes/Server.hpp"
 #include "../includes/ClientSession.hpp"
 #include "../includes/Utils.hpp"
@@ -130,8 +130,8 @@ void Server::setup_epoll()
  */
 void Server::run_event_loop()
 {
-    const int MAX_EVENTS = 10;                    // Max number of events to wait for per epoll_wait call
-    struct epoll_event events[MAX_EVENTS];        // Event buffer
+    const int MAX_EVENTS = 10;             // Max number of events to wait for per epoll_wait call
+    struct epoll_event events[MAX_EVENTS]; // Event buffer
 
     cout << "Entering event loop..." << endl;
     while (1)
@@ -141,7 +141,7 @@ void Server::run_event_loop()
         if (event_count == -1)
         {
             perror("epoll_wait failed!");
-            continue;  // On error, skip this iteration and continue listening
+            continue; // On error, skip this iteration and continue listening
         }
 
         // Process each triggered event
@@ -169,7 +169,6 @@ void Server::run_event_loop()
     }
 }
 
-
 /**
  * @brief Accepts new incoming client connections in a non-blocking loop.
  *
@@ -194,8 +193,8 @@ void Server::handle_new_connection()
             return;
         }
 
-        set_Nonblocking(connect_fd);  // Make the socket non-blocking
-        clients[connect_fd] = ClientSession(connect_fd);  // Add new client session
+        set_Nonblocking(connect_fd);                     // Make the socket non-blocking
+        clients[connect_fd] = ClientSession(connect_fd); // Add new client session
 
         // Register the client socket to epoll
         epoll_event ev;

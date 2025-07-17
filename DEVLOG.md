@@ -1,6 +1,6 @@
 # Development Log
 
-## Development Log — Day 1 (2025-06-23)
+## Development Log — Day 1
 
 ### Tasks completed
 
@@ -21,24 +21,24 @@
 
 ### day1_Notes
 
-- Ensured Makefile and project structure consistency.
-- Set up `.gitignore` to exclude build artifacts.
+- Ensured Makefile and project structure is correct.
+- Set up `.gitignore` to exclude some files when submit to github.
 
-## Development Log — Day 2 (2025-06-24)
+## Development Log — Day 2
 
 ### Tasks Completed
 
-- Implemented `Server::create_and_bind()`:
+- I Implemented `Server::create_and_bind()`:
   - Created a TCP socket using `socket()`.
   - Bound it to `INADDR_ANY:12345` with `bind()`.
   - Started listening with `listen()`.
   - Set the socket to non-blocking mode using `fcntl()` or helper `set_Nonblocking()`.
 
-- Implemented `Server::setup_epoll()`:
+- I Implemented `Server::setup_epoll()`:
   - Created epoll instance with `epoll_create1()`.
   - Registered `listen_fd` to the epoll instance using `epoll_ctl()` with `EPOLLIN` event.
 
-- Implemented `Server::run_event_loop()`:
+- I Implemented `Server::run_event_loop()`:
   - Entered event loop with `epoll_wait()`.
   - Identified readiness on `listen_fd` via `EPOLLIN`.
   - Accepted new incoming client connections using `accept()`.
@@ -54,7 +54,7 @@
 
 ### Issues Encountered
 
-- Initially forgot `main()` entry point — server failed to launch.
+- Initially forgot `main()` entry point — server failed to starting launching.
 - Encountered repeated epoll triggers before `accept()` was added:
   - Learned that `EPOLLIN` will persist until pending connections are handled via `accept()`.
 - Debugged `ClientSession(fd)` constructor error:
@@ -63,8 +63,8 @@
 
 ### Notes & Insights
 
-- Verified server can now accept multiple clients using `telnet localhost 12345`.
-- Understood how to manage file descriptor lifecycle and avoid starvation.
+- Verified server can now accept multiple clients using `telnet localhost 12345` command.
+- Understood how to manage file descriptor lifecycle.
 - Learned how `epoll_wait()` delivers one or more events and how to handle them efficiently.
 - Recognized the importance of handling `EPOLLRDHUP` to detect client disconnections (to be implemented in Day 3).
 
@@ -76,7 +76,7 @@
 - Prepare for client read/write events (handle `EPOLLIN`)
 - Expand `ClientSession` to buffer input data
 
-## Development Log — Day 3 (2025-06-29)
+## Development Log — Day 3
 
 ### Day3_Tasks Completed
 
@@ -131,7 +131,7 @@
 - Improve message structure: include nickname or ID (not just `fd`).
 - Consider modularizing event handlers for better readability and separation of concerns.
 
-## Development Log — Day 4 (2025-06-30)
+## Development Log — Day 4
 
 ### Day4_Tasks Completed
 
@@ -171,7 +171,7 @@
 - Add timestamp or username support (optional, for logging/user distinction).
 - Explore how to support command handling or admin messages in future design.
 
-## Development Log — Day 5 (2025-07-15)
+## Development Log — Day 5
 
 ### Day5_Tasks Completed
 
@@ -239,5 +239,25 @@
 - Support **session recovery** via `/reconnect <username> <password>`
 - Implement **graceful shutdown**: catch `SIGINT`, close sockets, flush buffers
 - Add **rate limiting / abuse protection**
+
+---
+
+## Development Log — Day 6
+
+### Day6_Tasks Completed
+
+- Implemented `start_server.sh` and `start_client.sh` scripts to run the command and successfully tested.
+
+---
+
+### Day6_Issues Encountered
+
+---
+
+### Day6_Notes & Insights
+
+---
+
+### Day6_Next Steps (Planned for Later tasks)
 
 ---
