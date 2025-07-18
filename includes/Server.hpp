@@ -1,6 +1,7 @@
 #ifndef SERVER_HPP
 #define SERVER_HPP
 #include "../includes/ClientSession.hpp"
+#include "ThreadPool.hpp"
 #include "UserManager.hpp"
 /**
  * @class Server
@@ -10,6 +11,7 @@ class Server
 {
 private:
     UserManager userManager;
+    ThreadPool threadPool;
 
 public:
     int listen_fd;

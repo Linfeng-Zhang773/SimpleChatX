@@ -29,6 +29,8 @@ public:
     bool hasClient(int fd) const;
     ClientSession& getClientSession(int fd);
     std::unordered_map<int, ClientSession>& getAllClients();
+
+    int getFdByNickname(const std::string& nickname) const;
 };
 
 #endif

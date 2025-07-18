@@ -17,7 +17,7 @@ using namespace std;
 /**
  * @brief A constructor for server class, print Server set up if succeed
  */
-Server::Server()
+Server::Server() : threadPool(10)
 {
     cout << "Server set up" << endl;
 }
@@ -164,7 +164,8 @@ void Server::run_event_loop()
             // Case 3: Incoming data from an already connected client
             else if (ev & EPOLLIN)
             {
-                handle_client_input(fd);
+                threadPool.enqueue([this, fd]()
+                                   { handle_client_input(fd); });
             }
         }
     }
@@ -247,6 +248,7 @@ void Server::handle_client_disconnection(int fd)
  */
 void Server::handle_client_input(int fd)
 {
+    std::cout << "[Thread " << std::this_thread::get_id() << "] Handling input from fd: " << fd << std::endl;
     char buffer[1024];
     ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
 

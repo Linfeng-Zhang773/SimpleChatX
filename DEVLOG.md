@@ -316,3 +316,28 @@
 - Add persistent storage (SQLite) for registered users and hashed passwords.
 - Begin Task 2: Integrate thread pool for decoupled message handling and concurrent processing
 - Plan support for session recovery upon client reconnection.
+
+## Development Log — Day 8
+
+### Day8_Tasks Completed
+
+- Designed and implemented a basic thread pool (`ThreadPool`) with:
+  - Fixed number of worker threads
+  - A shared task queue (`std::queue<std::function<void()>>`)
+  - Synchronization using `std::mutex` and `std::condition_variable`
+- Integrated `ThreadPool` into `Server` class to delegate `handle_client_input(fd)` via multithreading
+- Verified thread pool execution by printing thread IDs and confirming concurrent handling of multiple clients
+
+---
+
+### Day8_Issues Encountered
+
+- Compilation error due to missing `#include <stdexcept>` when using `std::runtime_error`
+- Difficulty testing true concurrency due to limited local clients and telnet UI
+- Observed multiple threads handling the same `fd` repeatedly — clarified as expected due to persistent I/O events
+
+---
+
+### Day8_Next Steps (Planned for Later tasks)
+
+- Task 3: Implement **private messaging** feature (`/to <username> <message>`)

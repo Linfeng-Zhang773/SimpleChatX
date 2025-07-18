@@ -87,3 +87,13 @@ std::unordered_map<int, ClientSession>& UserManager::getAllClients()
 {
     return clients;
 }
+
+int UserManager::getFdByNickname(const std::string& nickname) const
+{
+    auto it = nickname_map.find(nickname);
+    if (it != nickname_map.end())
+    {
+        return it->second;
+    }
+    return -1;
+}
