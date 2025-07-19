@@ -210,7 +210,11 @@ void Server::handle_new_connection()
             "Please choose an option:\r\n"
             "  /reg <username> <password>   to register a new user\r\n"
             "  /login <username> <password> to log in with an existing user\r\n"
-            "  /quit              to close the chat\r\n\r\n";
+            "  /quit                        to close the chat\r\n\r\n"
+            "  /to <username> <message>     to send private message to target user\r\n"
+            "  /create <groupname>          to create a chat group\r\n"
+            "  /join <groupname>            to join a group chat\r\n"
+            "  /group <groupname> <message> to send messages in a group\r\n";
         send(connect_fd, welcome.c_str(), welcome.size(), 0);
 
         cout << "[INFO] New client connected: fd = " << connect_fd << endl;
@@ -389,6 +393,129 @@ void Server::handle_client_input(int fd)
                 return;
             }
 
+            // Handle private message
+            else if (msg.compare(0, 4, "/to ") == 0)
+            {
+                std::istringstream iss(msg.substr(4));
+                std::string target_username;
+                iss >> target_username;
+
+                std::string content;
+                std::getline(iss, content);
+                if (!content.empty() && content[0] == ' ') content.erase(0, 1);
+
+                if (target_username.empty() || content.empty())
+                {
+                    const char* reply = "Usage: /to <username> <message>\r\n";
+                    send(fd, reply, strlen(reply), 0);
+                    return;
+                }
+
+                int target_fd = userManager.getFdByNickname(target_username);
+                if (target_fd == -1 || !userManager.isLoggedIn(target_fd))
+                {
+                    std::string reply = "User [" + target_username + "] not found or not online.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                    return;
+                }
+
+                std::string private_msg = "[Private from " + session.nickname + "]: " + content + "\r\n";
+                send(target_fd, private_msg.c_str(), private_msg.size(), 0);
+
+                std::string confirm = "[To " + target_username + "]: " + content + "\r\n";
+                send(fd, confirm.c_str(), confirm.size(), 0);
+                return;
+            }
+
+            else if (msg.compare(0, 8, "/create ") == 0)
+            {
+                std::string groupname;
+                std::istringstream iss(msg.substr(8));
+                iss >> groupname;
+
+                if (groupname.empty())
+                {
+                    const char* reply = "Usage: /create <groupname>\r\n";
+                    send(fd, reply, strlen(reply), 0);
+                    return;
+                }
+
+                if (userManager.createGroup(groupname))
+                {
+                    userManager.joinGroup(groupname, fd);
+                    std::string reply = "Group [" + groupname + "] created and joined.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                }
+                else
+                {
+                    std::string reply = "Group [" + groupname + "] already exists.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                }
+                return;
+            }
+            else if (msg.compare(0, 6, "/join ") == 0)
+            {
+                std::string groupname;
+                std::istringstream iss(msg.substr(6));
+                iss >> groupname;
+
+                if (groupname.empty())
+                {
+                    const char* reply = "Usage: /join <groupname>\r\n";
+                    send(fd, reply, strlen(reply), 0);
+                    return;
+                }
+
+                if (userManager.joinGroup(groupname, fd))
+                {
+                    std::string reply = "Joined group [" + groupname + "] successfully.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                }
+                else
+                {
+                    std::string reply = "Group [" + groupname + "] does not exist or already joined.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                }
+                return;
+            }
+            else if (msg.compare(0, 7, "/group ") == 0)
+            {
+                std::istringstream iss(msg.substr(7));
+                std::string groupname;
+                iss >> groupname;
+
+                std::string content;
+                std::getline(iss, content);
+                if (!content.empty() && content[0] == ' ') content.erase(0, 1);
+
+                if (groupname.empty() || content.empty())
+                {
+                    const char* reply = "Usage: /group <groupname> <message>\r\n";
+                    send(fd, reply, strlen(reply), 0);
+                    return;
+                }
+
+                if (!userManager.isInGroup(groupname, fd))
+                {
+                    std::string reply = "You are not in group [" + groupname + "]. Use /join to join.\r\n";
+                    send(fd, reply.c_str(), reply.size(), 0);
+                    return;
+                }
+
+                std::string group_msg = "[Group " + groupname + "] [" + session.nickname + "]: " + content + "\r\n";
+                std::unordered_set<int> members = userManager.getGroupMembers(groupname);
+                for (int member_fd : members)
+                {
+                    if (member_fd != fd)
+                    {
+                        send(member_fd, group_msg.c_str(), group_msg.size(), 0);
+                    }
+                }
+
+                // Echo back to sender
+                send(fd, group_msg.c_str(), group_msg.size(), 0);
+                return;
+            }
             // Broadcast message to all users (including sender)
             std::string full_msg = "[" + session.nickname + "]: " + msg + "\r\n";
             std::cout << "[RECV] " << full_msg;

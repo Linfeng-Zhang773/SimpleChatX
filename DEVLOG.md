@@ -327,6 +327,10 @@
   - Synchronization using `std::mutex` and `std::condition_variable`
 - Integrated `ThreadPool` into `Server` class to delegate `handle_client_input(fd)` via multithreading
 - Verified thread pool execution by printing thread IDs and confirming concurrent handling of multiple clients
+- Implemented **private messaging** feature using `/to <username> <message>`:
+  - Parses recipient and message from input
+  - Validates user existence and online status
+  - Sends confirmation to sender and message to recipient
 
 ---
 
@@ -340,4 +344,41 @@
 
 ### Day8_Next Steps (Planned for Later tasks)
 
-- Task 3: Implement **private messaging** feature (`/to <username> <message>`)
+- Task 4: Add **group chat support**
+- Task 5: Handle **disconnection recovery & session restore**
+- Task 6: Implement **chat history persistence** using SQLite or local log
+- Task 7: Add **history message recall** on login or command
+
+## Development Log — Day 9
+
+### Day9_Tasks Completed
+
+- Implemented **group chat functionality** with the following commands:
+  - `/create <groupname>`: create a new group if it doesn't exist
+  - `/join <groupname>`: join an existing group
+  - `/group <groupname> <message>`: send a group message to all members
+- Updated `UserManager`:
+  - Added `groups` map: `unordered_map<string, unordered_set<int>>`
+  - Implemented methods: `createGroup()`, `joinGroup()`, `getGroupMembers()`, etc.
+- Updated `Server::handle_client_input()` to support the above group commands
+- Successfully tested group chat with multiple clients using Telnet
+
+---
+
+### Day9_Issues Encountered
+
+- Minor issue: user can join the same group multiple times (harmless since set is used but not generally good for design)(already fixed)
+
+---
+
+### Day9_Notes & Insights
+
+- Using `unordered_set` for group member management avoids duplicates automatically
+- String parsing logic with `std::istringstream` remains effective for command handling
+- Group messaging logic is similar to broadcast but filtered by group membership
+
+---
+
+### Day9_Next Steps (Planned for Later tasks)
+
+- Task 4: Implement **reconnection and session recovery**, allowing users to restore session on relogin

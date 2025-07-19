@@ -97,3 +97,35 @@ int UserManager::getFdByNickname(const std::string& nickname) const
     }
     return -1;
 }
+
+bool UserManager::createGroup(const std::string& groupname)
+{
+    if (groups.count(groupname)) return false;
+    groups[groupname] = std::unordered_set<int>();
+    return true;
+}
+
+bool UserManager::joinGroup(const std::string& groupname, int fd)
+{
+    auto it = groups.find(groupname);
+    if (it == groups.end()) return false;
+
+    if (it->second.count(fd)) return false;
+
+    it->second.insert(fd);
+    return true;
+}
+
+bool UserManager::isInGroup(const std::string& groupname, int fd) const
+{
+    auto it = groups.find(groupname);
+    if (it == groups.end()) return false;
+    return it->second.count(fd) > 0;
+}
+
+std::unordered_set<int> UserManager::getGroupMembers(const std::string& groupname) const
+{
+    auto it = groups.find(groupname);
+    if (it != groups.end()) return it->second;
+    return {};
+}

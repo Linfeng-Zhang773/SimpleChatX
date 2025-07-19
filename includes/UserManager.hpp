@@ -9,10 +9,11 @@
 class UserManager
 {
 private:
-    std::unordered_map<int, ClientSession> clients;            // fd->session
-    std::unordered_map<std::string, int> nickname_map;         // nickname->fd
-    std::unordered_set<std::string> registered_users;          // registered usernames
-    std::unordered_map<std::string, std::string> password_map; // username->password
+    std::unordered_map<int, ClientSession> clients;                  // fd->session
+    std::unordered_map<std::string, int> nickname_map;               // nickname->fd
+    std::unordered_set<std::string> registered_users;                // registered usernames
+    std::unordered_map<std::string, std::string> password_map;       // username->password
+    std::unordered_map<std::string, std::unordered_set<int>> groups; // groupname -> fds
 public:
     UserManager();
     ~UserManager() = default;
@@ -31,6 +32,11 @@ public:
     std::unordered_map<int, ClientSession>& getAllClients();
 
     int getFdByNickname(const std::string& nickname) const;
+
+    bool createGroup(const std::string& groupname);
+    bool joinGroup(const std::string& groupname, int fd);
+    bool isInGroup(const std::string& groupname, int fd) const;
+    std::unordered_set<int> getGroupMembers(const std::string& groupname) const;
 };
 
 #endif
