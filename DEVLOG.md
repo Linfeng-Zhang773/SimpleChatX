@@ -28,17 +28,17 @@
 
 ### Tasks Completed
 
-- I Implemented `Server::create_and_bind()`:
+- Implemented `Server::create_and_bind()`:
   - Created a TCP socket using `socket()`.
   - Bound it to `INADDR_ANY:12345` with `bind()`.
   - Started listening with `listen()`.
   - Set the socket to non-blocking mode using `fcntl()` or helper `set_Nonblocking()`.
 
-- I Implemented `Server::setup_epoll()`:
+- Implemented `Server::setup_epoll()`:
   - Created epoll instance with `epoll_create1()`.
   - Registered `listen_fd` to the epoll instance using `epoll_ctl()` with `EPOLLIN` event.
 
-- I Implemented `Server::run_event_loop()`:
+- Implemented `Server::run_event_loop()`:
   - Entered event loop with `epoll_wait()`.
   - Identified readiness on `listen_fd` via `EPOLLIN`.
   - Accepted new incoming client connections using `accept()`.
@@ -464,5 +464,31 @@
 
 - **Task 8**: Add user registration/login persistence (store `username` and `password` in DB)
 - **Task 9**: On server start, preload all registered users into memory or directly query DB during login
+- Extend Database schema with `users` table:  
+  `CREATE TABLE users (username TEXT PRIMARY KEY, password TEXT NOT NULL);`
+
+## Development Log — Day 12
+
+### Day12_Tasks Completed
+
+- added brief comments to introduce key features and designs
+- tested all designed features and ensured these features working perfect
+- wrote README.md
+- rephrase sentences and grammar in DEVLOG.md
+
+---
+
+### Day12_Issues Encountered
+
+- NONE
+
+---
+
+### Day12_Next Steps (Planned for next version)
+
+Although I implemented chat msgs persistance, right now if the server is crashed or shut down, username and password map will be destroyed, therefore user has to register again. In order to persist the username and passowrd, following design and implementation is needed:
+
+- Add user registration/login persistence (store `username` and `password` in DB)
+- On server start, preload all registered users into memory or directly query DB during login
 - Extend Database schema with `users` table:  
   `CREATE TABLE users (username TEXT PRIMARY KEY, password TEXT NOT NULL);`

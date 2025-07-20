@@ -15,39 +15,24 @@
 
 using namespace std;
 
-/**
- * @brief A constructor for server class, print Server set up if succeed
- */
+// Constructor: create thread pool
 Server::Server() : threadPool(10)
 {
     cout << "Server set up" << endl;
 }
 
-/**
- * @brief A destructor for destroying server class, print Server shut down afterward
- */
+// Destructor: cleanup log
 Server::~Server()
 {
     cout << "Server shut down" << endl;
 }
 
-/**
- * @brief Create a TCP socket, bind it to a local address, listen for incoming connections,
- *        and set the socket to non-blocking mode.
- *
- * This function initializes the server's listening socket:
- * - Creates a TCP socket
- * - Binds to port 12345 on all available interfaces (INADDR_ANY)
- * - Starts listening with a backlog of 10
- * - Sets the socket to non-blocking using fcntl
- *
- * On failure at any step, it logs the error and terminates the program.
- */
+// Create a listening TCP socket, bind to port 12345, set non-blocking
 void Server::create_and_bind()
 {
     struct sockaddr_in addr;
 
-    // 1. Create a TCP socket
+    // 1. Create a TCP socket (IPv4, stream)
     listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd == -1)
     {
@@ -55,10 +40,10 @@ void Server::create_and_bind()
         exit(EXIT_FAILURE);
     }
 
-    // 2. Set up local address (IPv4, port 12345, any IP)
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(12345);             // Host to network byte order
-    addr.sin_addr.s_addr = htonl(INADDR_ANY); // Bind to all available interfaces
+    // 2. Set up address: IPv4, port 12345, bind to 0.0.0.0 (all interfaces)
+    addr.sin_family = AF_INET;                // Use IPv4
+    addr.sin_port = htons(12345);             // Convert port to network byte order
+    addr.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections on any local IP
 
     // 3. Bind socket to the address
     int result = bind(listen_fd, (struct sockaddr*)&addr, sizeof(addr));
@@ -68,103 +53,84 @@ void Server::create_and_bind()
         exit(EXIT_FAILURE);
     }
 
-    // 4. Start listening on the socket
-    int listen_res = listen(listen_fd, 10);
+    // 4. Mark socket as passive (ready to accept connections)
+    int listen_res = listen(listen_fd, 10); // backlog = 10
     if (listen_res == -1)
     {
         perror("listen failed!");
         exit(EXIT_FAILURE);
     }
 
-    // 5. Set socket to non-blocking mode
+    // 5. Set the listening socket to non-blocking mode
     set_Nonblocking(listen_fd);
 }
 
-/**
- * @brief Initialize epoll and register the listening socket for read events.
- *
- * Creates an epoll instance, and adds the listening socket (listen_fd)
- * to the epoll interest list for monitoring incoming connections (EPOLLIN).
- *
- * On failure, logs the error and exits the program.
- */
+// Set up epoll instance and register listening socket
 void Server::setup_epoll()
 {
     struct epoll_event event;
 
-    // 1. Create epoll instance
-    epoll_fd = epoll_create1(0);
+    // 1. Create an epoll instance
+    epoll_fd = epoll_create1(0); // Use modern epoll API
     if (epoll_fd == -1)
     {
         perror("create epoll failed!");
         exit(EXIT_FAILURE);
     }
 
-    // 2. Set up event for the listening socket
-    event.events = EPOLLIN;    // Interested in read events
-    event.data.fd = listen_fd; // Monitor the listening socket
+    // 2. Prepare event for the listening socket
+    event.events = EPOLLIN;    // Watch for read (accept) events
+    event.data.fd = listen_fd; // Associate the event with listen_fd
 
-    // 3. Register the listening socket with epoll
+    // 3. Add the listening socket to the epoll interest list
     int res = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_fd, &event);
     if (res == -1)
     {
         perror("register events failed!");
         exit(EXIT_FAILURE);
     }
-    cout << "Epoll setup complete. Waiting for events..." << endl;
+
+    std::cout << "Epoll setup complete. Waiting for events..." << std::endl;
 }
 
-/**
- * @brief Starts the main event loop of the server using epoll.
- *
- * This loop continuously waits for I/O events on all registered file descriptors (sockets),
- * using `epoll_wait`. It efficiently handles:
- * - New incoming connections (on `listen_fd`)
- * - Incoming data from clients
- * - Client disconnections
- *
- * Delegates actual logic to helper member functions:
- * - `handle_new_connection()` for accept()
- * - `handle_client_input()` for recv()
- * - `handle_client_disconnection()` for closing sockets
- *
- * The loop runs indefinitely and forms the backbone of the server’s non-blocking I/O model.
- */
+// Main epoll event loop: wait for I/O and dispatch events
 void Server::run_event_loop()
 {
-    const int MAX_EVENTS = 10;             // Max number of events to wait for per epoll_wait call
-    struct epoll_event events[MAX_EVENTS]; // Event buffer
+    const int MAX_EVENTS = 10;             // Max events per epoll_wait call
+    struct epoll_event events[MAX_EVENTS]; // Buffer to store triggered events
 
-    cout << "Entering event loop..." << endl;
+    std::cout << "Entering event loop..." << std::endl;
+
     while (1)
     {
-        // Wait for I/O events (blocking indefinitely until at least one event occurs)
+        // Wait for I/O events (blocks until at least one event is ready)
         int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (event_count == -1)
         {
             perror("epoll_wait failed!");
-            continue; // On error, skip this iteration and continue listening
+            continue; // Skip this round if epoll_wait failed
         }
 
-        // Process each triggered event
+        // Handle each ready event
         for (int i = 0; i < event_count; ++i)
         {
             int fd = events[i].data.fd;
             uint32_t ev = events[i].events;
 
-            // Case 1: New incoming connection on listening socket
+            // Case 1: New client connection
             if (fd == listen_fd && (ev & EPOLLIN))
             {
-                handle_new_connection();
+                handle_new_connection(); // Accept and register client
             }
-            // Case 2: Client disconnected (peer hang up or error)
+            // Case 2: Client disconnected (or error)
             else if ((ev & EPOLLRDHUP) || (ev & EPOLLHUP))
             {
-                handle_client_disconnection(fd);
+                handle_client_disconnection(fd); // Cleanup session and epoll
             }
-            // Case 3: Incoming data from an already connected client
+            // Case 3: Client sent data
             else if (ev & EPOLLIN)
             {
+                // Offload to thread pool for async handling
                 threadPool.enqueue([this, fd]()
                                    { handle_client_input(fd); });
             }
@@ -172,40 +138,40 @@ void Server::run_event_loop()
     }
 }
 
-/**
- * @brief Accepts new incoming client connections in a non-blocking loop.
- *
- * Uses accept() repeatedly to handle all pending connections until EAGAIN.
- * Each new client:
- * - Is set to non-blocking mode
- * - Added to epoll monitoring
- * - Stored in the clients map as a ClientSession
- * - Receives a welcome message
- */
+// Accept and register all incoming client connections
 void Server::handle_new_connection()
 {
     while (1)
     {
         sockaddr_in cliaddr;
         socklen_t len = sizeof(cliaddr);
+
+        // Accept a new client (non-blocking)
         int connect_fd = accept(listen_fd, (sockaddr*)&cliaddr, &len);
+
         if (connect_fd == -1)
         {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            // No more clients to accept (EAGAIN/EWOULDBLOCK = expected in non-blocking mode)
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                break;
+
             perror("accept failed");
             return;
         }
 
-        set_Nonblocking(connect_fd);       // Make the socket non-blocking
-        userManager.addClient(connect_fd); // Add new client session
+        // 1. Set the new client socket to non-blocking
+        set_Nonblocking(connect_fd);
 
-        // Register the client socket to epoll
+        // 2. Add to UserManager (creates a new ClientSession)
+        userManager.addClient(connect_fd);
+
+        // 3. Register client fd to epoll
         epoll_event ev;
-        ev.events = EPOLLIN | EPOLLRDHUP;
+        ev.events = EPOLLIN | EPOLLRDHUP; // Read and disconnect events
         ev.data.fd = connect_fd;
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, connect_fd, &ev);
 
-        // Send welcome message with available commands
+        // 4. Send welcome message to the new client
         std::string welcome =
             "Welcome to ChatServer!\r\n"
             "Please choose an option:\r\n"
@@ -217,72 +183,83 @@ void Server::handle_new_connection()
             "  /join <groupname>            to join a group chat\r\n"
             "  /group <groupname> <message> to send messages in a group\r\n"
             "  /history                     to check recent 50 history messages\r\n";
+
         send(connect_fd, welcome.c_str(), welcome.size(), 0);
 
-        cout << "[INFO] New client connected: fd = " << connect_fd << endl;
+        std::cout << "[INFO] New client connected: fd = " << connect_fd << std::endl;
     }
 }
 
-/**
- * @brief Handles a client's disconnection.
- *
- * Cleans up the client's session:
- * - Removes it from epoll
- * - Closes the socket
- * - Erases the session from the clients map
- */
+// Clean up when a client disconnects
+// Removes client from epoll, closes socket, and clears user session
 void Server::handle_client_disconnection(int fd)
 {
+    // 1. Remove fd from epoll interest list
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+
+    // 2. Close the client socket
     close(fd);
+
+    // 3. Log out user (clear nickname, status)
     userManager.logoutUser(fd);
+
+    // 4. Remove client session from UserManager
     userManager.removeClient(fd);
-    cout << "[INFO] Client disconnected: fd = " << fd << endl;
+
+    std::cout << "[INFO] Client disconnected: fd = " << fd << std::endl;
 }
 
-/**
- * @brief Handles incoming data from a client socket.
- *
- * Performs:
- * - Reading and buffering partial input
- * - Parsing complete lines ending with '\n'
- * - Processing commands like /reg, /login, /quit
- * - Blocking unauthenticated users from sending chat messages
- * - Broadcasting valid chat messages
- *
- * Uses newline as message delimiter; handles \r cleanup for Telnet.
- */
+// Receive and process input from a client.
+// Supports command parsing, authentication, and various messaging types.
+// Automatically handles login/registration if needed.
+// Commands: /reg, /login, /to, /create, /join, /group, /history, /quit
 void Server::handle_client_input(int fd)
 {
+    // Print which thread is handling this request (for debugging)
     std::cout << "[Thread " << std::this_thread::get_id() << "] Handling input from fd: " << fd << std::endl;
+
+    // Prepare buffer for receiving client data
     char buffer[1024];
+
+    // Try to receive data from the client socket
+    // Returns:
+    //   >0: number of bytes received
+    //   =0: client has closed connection (graceful disconnect)
+    //   <0: error occurred (EAGAIN is OK in non-blocking mode)
     ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
 
-    // Handle disconnection or error
+    // Handle client disconnection (recv returns 0 = peer closed socket)
     if (n == 0)
     {
         handle_client_disconnection(fd);
         return;
     }
+
+    // Handle receive error
     else if (n < 0)
     {
+        // Non-blocking mode: no data available now (not an error)
         if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+
+        // Other error occurred
         perror("recv failed");
         handle_client_disconnection(fd);
         return;
     }
 
-    // Append new data to session buffer
+    // Append received data into the client’s read buffer
     if (!userManager.hasClient(fd)) return;
     ClientSession& session = userManager.getClientSession(fd);
+    session.read_buffer += std::string(buffer, n); // Accumulate partial message
 
-    session.read_buffer += std::string(buffer, n);
+    size_t pos; // Will be used to find message delimiters ('\n')
 
-    size_t pos;
     // Process all complete lines in the buffer
     while ((pos = session.read_buffer.find('\n')) != std::string::npos)
     {
+        // get lines and assign to msg
         std::string msg = session.read_buffer.substr(0, pos);
+        // erase read buffer
         session.read_buffer.erase(0, pos + 1);
 
         // Remove \r if present (Telnet sends \r\n)
@@ -303,35 +280,45 @@ void Server::handle_client_input(int fd)
         // Authentication required before messaging
         if (!userManager.isLoggedIn(fd))
         {
-
+            // if command is register
             if (msg.compare(0, 5, "/reg ") == 0)
             {
-                std::istringstream iss(msg.substr(5));
+                // Extract username and password from the message
+                std::istringstream iss(msg.substr(5)); // Skip "/reg "
                 std::string username, password;
                 iss >> username >> password;
 
+                // Check if input is missing
                 if (username.empty() || password.empty())
                 {
                     std::string reply = "Usage: /reg <username> <password>\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                     return;
                 }
+
+                // Username length check
                 if (username.length() < 2 || username.length() > 20)
                 {
                     std::string reply = "Username must be 2~20 characters.\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                     return;
                 }
+
+                // Password length check
                 if (password.length() < 6 || password.length() > 20)
                 {
                     std::string reply = "Password must be 6~20 characters.\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                     return;
                 }
+
+                // Try to register the user
                 if (userManager.registerUser(fd, username, password))
                 {
+                    // Update session info after successful registration
                     session.nickname = username;
                     session.status = AuthStatus::AUTHORIZED;
+
                     std::string reply = "Registered successfully as [" + username + "]\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                 }
@@ -341,18 +328,23 @@ void Server::handle_client_input(int fd)
                     send(fd, reply.c_str(), reply.size(), 0);
                 }
             }
+            // Handle "/login <username> <password>" command
             else if (msg.compare(0, 7, "/login ") == 0)
             {
+                // Parse username and password
                 std::istringstream iss(msg.substr(7));
                 std::string username, password;
                 iss >> username >> password;
 
+                // Check for missing input
                 if (username.empty() || password.empty())
                 {
                     std::string reply = "Usage: /login <username> <password>\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
                     return;
                 }
+
+                // Validate username and password length
                 if (username.length() < 2 || username.length() > 20)
                 {
                     std::string reply = "Username must be 2~20 characters.\r\n";
@@ -365,19 +357,25 @@ void Server::handle_client_input(int fd)
                     send(fd, reply.c_str(), reply.size(), 0);
                     return;
                 }
+
+                // Try to login
                 if (userManager.loginUser(fd, username, password))
                 {
+                    // Set session info after successful login
                     session.nickname = username;
                     session.status = AuthStatus::AUTHORIZED;
+
                     std::string reply = "Logged in successfully as [" + username + "]\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
 
+                    // Show 10 recent messages
                     db.open("chat.db");
                     auto messages = db.getRecentMessages(10);
 
                     std::ostringstream oss;
                     oss << "=== Recent Messages ===\r\n";
 
+                    // Filter and show only visible messages to this user
                     for (const auto& m : messages)
                     {
                         bool visible = false;
@@ -414,7 +412,7 @@ void Server::handle_client_input(int fd)
                     send(fd, reply.c_str(), reply.size(), 0);
                 }
             }
-
+            // user not authorized, reminding feedback
             else
             {
                 const char* reply = "Please register (/reg <username> <password>) or login (/login <username> <password>) first.\r\n";
@@ -422,18 +420,22 @@ void Server::handle_client_input(int fd)
             }
             return;
         }
+        // user is authorized and able to send other commands
         else
         {
+            // Handle "/history" command - show recent 50 messages
             if (msg == "/history")
             {
                 std::cout << "[DEBUG] /history triggered by " << session.nickname << "\n";
 
+                // Open database and fetch recent messages
                 db.open("chat.db");
                 auto messages = db.getRecentMessages(50);
 
                 std::ostringstream oss;
                 oss << "=== Recent Messages ===\r\n";
 
+                // Go through each message and check if current user can see it
                 for (const auto& m : messages)
                 {
                     bool visible = false;
@@ -453,6 +455,7 @@ void Server::handle_client_input(int fd)
                             visible = true;
                     }
 
+                    // If message is visible to the user, format and add to output
                     if (visible)
                     {
                         std::string line;
@@ -467,13 +470,16 @@ void Server::handle_client_input(int fd)
                     }
                 }
 
+                // If no visible message, show fallback
                 std::string output = oss.str();
                 if (output == "=== Recent Messages ===\r\n")
                     output += "(no visible message)\r\n";
 
+                // Send result to client
                 send(fd, output.c_str(), output.size(), 0);
                 return;
             }
+
             // Block redundant auth commands
             if (msg.compare(0, 5, "/reg ") == 0 || msg.compare(0, 7, "/login ") == 0)
             {
@@ -482,7 +488,7 @@ void Server::handle_client_input(int fd)
                 return;
             }
 
-            // Handle private message
+            // Handle private message: /to <username> <message>
             else if (msg.compare(0, 4, "/to ") == 0)
             {
                 std::istringstream iss(msg.substr(4));
@@ -493,6 +499,7 @@ void Server::handle_client_input(int fd)
                 std::getline(iss, content);
                 if (!content.empty() && content[0] == ' ') content.erase(0, 1);
 
+                // Check arguments
                 if (target_username.empty() || content.empty())
                 {
                     const char* reply = "Usage: /to <username> <message>\r\n";
@@ -500,6 +507,7 @@ void Server::handle_client_input(int fd)
                     return;
                 }
 
+                // Find target user
                 int target_fd = userManager.getFdByNickname(target_username);
                 if (target_fd == -1 || !userManager.isLoggedIn(target_fd))
                 {
@@ -508,16 +516,20 @@ void Server::handle_client_input(int fd)
                     return;
                 }
 
+                // Send message to target and confirm to sender
                 std::string private_msg = "[Private from " + session.nickname + "]: " + content + "\r\n";
                 send(target_fd, private_msg.c_str(), private_msg.size(), 0);
 
                 std::string confirm = "[To " + target_username + "]: " + content + "\r\n";
                 send(fd, confirm.c_str(), confirm.size(), 0);
+
+                // Save to database
                 db.open("chat.db");
                 db.insertMessage(session.nickname, target_username, content, "private");
                 return;
             }
 
+            // Handle group creation: /create <groupname>
             else if (msg.compare(0, 8, "/create ") == 0)
             {
                 std::string groupname;
@@ -531,6 +543,7 @@ void Server::handle_client_input(int fd)
                     return;
                 }
 
+                // Create and join group
                 if (userManager.createGroup(groupname))
                 {
                     userManager.joinGroup(groupname, fd);
@@ -544,6 +557,8 @@ void Server::handle_client_input(int fd)
                 }
                 return;
             }
+
+            // Handle joining a group: /join <groupname>
             else if (msg.compare(0, 6, "/join ") == 0)
             {
                 std::string groupname;
@@ -557,6 +572,7 @@ void Server::handle_client_input(int fd)
                     return;
                 }
 
+                // Join existing group
                 if (userManager.joinGroup(groupname, fd))
                 {
                     std::string reply = "Joined group [" + groupname + "] successfully.\r\n";
@@ -569,6 +585,8 @@ void Server::handle_client_input(int fd)
                 }
                 return;
             }
+
+            // Handle group message: /group <groupname> <message>
             else if (msg.compare(0, 7, "/group ") == 0)
             {
                 std::istringstream iss(msg.substr(7));
@@ -586,6 +604,7 @@ void Server::handle_client_input(int fd)
                     return;
                 }
 
+                // Check if user is in the group
                 if (!userManager.isInGroup(groupname, fd))
                 {
                     std::string reply = "You are not in group [" + groupname + "]. Use /join to join.\r\n";
@@ -593,6 +612,7 @@ void Server::handle_client_input(int fd)
                     return;
                 }
 
+                // Broadcast message to all group members except sender
                 std::string group_msg = "[Group " + groupname + "] [" + session.nickname + "]: " + content + "\r\n";
                 std::unordered_set<int> members = userManager.getGroupMembers(groupname);
                 for (int member_fd : members)
@@ -602,13 +622,15 @@ void Server::handle_client_input(int fd)
                         send(member_fd, group_msg.c_str(), group_msg.size(), 0);
                     }
                 }
+
+                // Save to database and echo back to sender
                 db.open("chat.db");
                 db.insertMessage(session.nickname, groupname, content, "group");
-                // Echo back to sender
                 send(fd, group_msg.c_str(), group_msg.size(), 0);
                 return;
             }
-            // Broadcast message to all users (including sender)
+
+            // Broadcast message to all users (including sender echo)
             std::string full_msg = "[" + session.nickname + "]: " + msg + "\r\n";
             std::cout << "[RECV] " << full_msg;
             broadcast_message(fd, full_msg);
@@ -616,42 +638,36 @@ void Server::handle_client_input(int fd)
     }
 }
 
-/**
- * @brief Sends a message to all connected clients.
- *
- * Broadcasts messages to every client in `clients`, including the sender.
- * On send failure (e.g., broken pipe), the client is disconnected.
- *
- * @param from_fd The sender's file descriptor (used for logging or future exclusions).
- * @param msg     The formatted message to send.
- */
+// Send a message to all connected clients and store it in DB
+// from_fd Sender's socket fd
+// msg The message to broadcast (already formatted)
 void Server::broadcast_message(int from_fd, const std::string& msg)
 {
+    // 1. Open DB and log the broadcast message
     db.open("chat.db");
     ClientSession& session = userManager.getClientSession(from_fd);
     db.insertMessage(session.nickname, "ALL", msg, "broadcast");
+
+    // 2. Send to all connected clients
     for (auto& [fd, session] : userManager.getAllClients())
     {
-        // Uncomment to exclude sender: if (fd == from_fd) continue;
+        // Uncomment below line to exclude sender from receiving their own message
+        // if (fd == from_fd) continue;
+
         if (send(fd, msg.c_str(), msg.size(), 0) == -1)
         {
             perror("send failed");
-            handle_client_disconnection(fd);
+            handle_client_disconnection(fd); // Remove if send failed
         }
     }
 }
 
-/**
- * @brief Initializes and starts the server.
- *
- * - Binds to the server port (create_and_bind)
- * - Sets up epoll (setup_epoll)
- * - Starts the main event loop (run_event_loop)
- */
+// Start the server: bind socket, setup epoll, enter main loop
 void Server::run_server()
 {
-    cout << "Server activited" << endl;
-    create_and_bind();
-    setup_epoll();
-    run_event_loop();
+    std::cout << "Server activated" << std::endl;
+
+    create_and_bind(); // Step 1: create socket and bind to port
+    setup_epoll();     // Step 2: setup epoll and add listen_fd
+    run_event_loop();  // Step 3: start main epoll loop
 }

@@ -1,22 +1,28 @@
 #ifndef USERMANAGER_HPP
 #define USERMANAGER_HPP
+
 #include <iostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "ClientSession.hpp"
+
+/// Manage users: registration, login, sessions, and groups
 class UserManager
 {
 private:
-    std::unordered_map<int, ClientSession> clients;                  // fd->session
-    std::unordered_map<std::string, int> nickname_map;               // nickname->fd
-    std::unordered_set<std::string> registered_users;                // registered usernames
-    std::unordered_map<std::string, std::string> password_map;       // username->password
-    std::unordered_map<std::string, std::unordered_set<int>> groups; // groupname -> fds
+    std::unordered_map<int, ClientSession> clients;                  // fd -> session
+    std::unordered_map<std::string, int> nickname_map;               // username -> fd
+    std::unordered_set<std::string> registered_users;                // set of all registered usernames
+    std::unordered_map<std::string, std::string> password_map;       // username -> password
+    std::unordered_map<std::string, std::unordered_set<int>> groups; // groupname -> set of fds
+
 public:
     UserManager();
     ~UserManager() = default;
+
+    // Registration & login
     bool isRegistered(const std::string& username) const;
     bool registerUser(int fd, const std::string& username, const std::string& password);
     bool loginUser(int fd, const std::string& username, const std::string& password);
@@ -24,15 +30,15 @@ public:
     std::string getNickname(int fd) const;
     void logoutUser(int fd);
 
+    // Client connection/session tracking
     void addClient(int fd);
     void removeClient(int fd);
-
     bool hasClient(int fd) const;
     ClientSession& getClientSession(int fd);
     std::unordered_map<int, ClientSession>& getAllClients();
-
     int getFdByNickname(const std::string& nickname) const;
 
+    // Group chat management
     bool createGroup(const std::string& groupname);
     bool joinGroup(const std::string& groupname, int fd);
     bool isInGroup(const std::string& groupname, int fd) const;
