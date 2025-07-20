@@ -382,3 +382,36 @@
 ### Day9_Next Steps (Planned for Later tasks)
 
 - Task 4: Implement **reconnection and session recovery**, allowing users to restore session on relogin
+
+## Development Log — Day 10
+
+### Day10_Tasks Completed
+
+- Implemented **disconnect-reconnect & session recovery**:
+  - When a client disconnects (e.g., `/quit`), their nickname mapping is removed via `logoutUser()`
+  - Fixed a critical bug where `removeClient()` was called before `logoutUser()`, causing login failures due to orphaned nickname mapping
+  - Reordered disconnection logic in `handle_client_disconnection()` to ensure session cleanup happens before erasing client data
+
+---
+
+### Day10_Issues Encountered
+
+- Encountered a bug where users could not re-login after disconnecting
+  - Root cause: session was erased from `clients` before retrieving nickname, breaking logout logic
+  - Resolved by reordering the cleanup steps
+- Noted that rejoining a group multiple times was allowed; this behavior was considered acceptable for now
+
+---
+
+### Day10_Notes & Insights
+
+- Order of resource cleanup (e.g., session map vs. nickname map) is critical for proper session recovery
+- Group chat can be trivially extended to add features like group listing or admin privileges in the future
+- Login flow is now robust to disconnections and client reconnects
+
+---
+
+### Day10_Next Steps (Planned for Later tasks)
+
+- **Task 6**: Persist chat logs to SQLite or local log file
+- **Task 7**: Add `/history` command to view recent messages

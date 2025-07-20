@@ -24,6 +24,10 @@ bool UserManager::registerUser(int fd, const std::string& username, const std::s
 
 bool UserManager::loginUser(int fd, const std::string& username, const std::string& password)
 {
+    std::cout << "[LOGIN DEBUG] username = " << username << ", password = " << password << "\n";
+    std::cout << "[LOGIN DEBUG] isRegistered = " << isRegistered(username) << "\n";
+    std::cout << "[LOGIN DEBUG] nickname_map.count = " << nickname_map.count(username) << "\n";
+    std::cout << "[LOGIN DEBUG] stored password = " << password_map[username] << "\n";
     if (!isRegistered(username)) return false;
     if (nickname_map.count(username)) return false;
     if (password_map[username] != password) return false;
@@ -59,7 +63,8 @@ void UserManager::logoutUser(int fd)
     {
         std::string name = it->second.nickname;
         nickname_map.erase(name);
-        clients.erase(it);
+        it->second.status = AuthStatus::NONE;
+        it->second.nickname.clear();
     }
 }
 void UserManager::addClient(int fd)

@@ -233,8 +233,8 @@ void Server::handle_client_disconnection(int fd)
 {
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
     close(fd);
-    userManager.removeClient(fd);
     userManager.logoutUser(fd);
+    userManager.removeClient(fd);
     cout << "[INFO] Client disconnected: fd = " << fd << endl;
 }
 

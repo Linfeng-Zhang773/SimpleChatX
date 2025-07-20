@@ -1,6 +1,6 @@
 #ifndef USERMANAGER_HPP
 #define USERMANAGER_HPP
-
+#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
