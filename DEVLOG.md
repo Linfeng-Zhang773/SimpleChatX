@@ -415,3 +415,54 @@
 
 - **Task 6**: Persist chat logs to SQLite or local log file
 - **Task 7**: Add `/history` command to view recent messages
+
+## Development Log — Day 11
+
+### Day11_Tasks Completed
+
+- Integrated **SQLite** into the ChatServer project:
+  - Installed and linked `sqlite3` development library
+  - Modified `CMakeLists.txt` to include `-lsqlite3`
+- Created `Database.hpp` / `Database.cpp` module:
+  - Implemented `open()` to initialize or connect to `chat.db`
+  - Implemented `insertMessage(sender, receiver, content, type)` to persist chat logs
+  - Implemented `getRecentMessages(limit)` to retrieve last N messages from database
+- Refactored `Server::handle_client_input()`:
+  - On successful broadcast / private / group message, inserted it into `chat.db`
+- Implemented `/history` command:
+  - Logged-in users can now call `/history` to view last 50 messages relevant to them
+  - Supported types:
+    - `broadcast` — shown to all users
+    - `private` — shown if sender or receiver is the user
+    - `group` — shown if the user is in the target group
+- Verified chat log storage via `sqlite3 chat.db` and confirmed correct records
+
+---
+
+### Day11_Issues Encountered
+
+- Forgot to pass the `filename` param in `Database::open()` — added it back
+- Compilation failed due to misplaced parentheses and duplicate default argument — fixed syntax and cleaned up headers
+- Ran into port conflict (`Address already in use`) — solved by killing previous server or waiting for port release
+- Initially failed to filter history messages correctly — fixed logic based on message type + group membership
+
+---
+
+### Day11_Notes & Insights
+
+- SQLite integration provides a solid foundation for future features like:
+  - Persistent user accounts
+  - Chat analytics
+  - Admin tools (e.g., deletion, bans)
+- History visibility depends not just on sender/receiver, but also **group membership**, requiring real-time checks
+- Appending `\r\n` consistently in Telnet output is important for readability
+- Console debugging (`[DEBUG]`) helped trace message flow & permissions
+
+---
+
+### Day11_Next Steps (Planned for Later tasks)
+
+- **Task 8**: Add user registration/login persistence (store `username` and `password` in DB)
+- **Task 9**: On server start, preload all registered users into memory or directly query DB during login
+- Extend Database schema with `users` table:  
+  `CREATE TABLE users (username TEXT PRIMARY KEY, password TEXT NOT NULL);`

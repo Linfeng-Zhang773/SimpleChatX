@@ -1,6 +1,7 @@
 // introduces all needed libaraies
 #include "../includes/Server.hpp"
 #include "../includes/ClientSession.hpp"
+#include "../includes/Database.hpp"
 #include "../includes/Utils.hpp"
 #include <arpa/inet.h>
 #include <cstring>
@@ -214,7 +215,8 @@ void Server::handle_new_connection()
             "  /to <username> <message>     to send private message to target user\r\n"
             "  /create <groupname>          to create a chat group\r\n"
             "  /join <groupname>            to join a group chat\r\n"
-            "  /group <groupname> <message> to send messages in a group\r\n";
+            "  /group <groupname> <message> to send messages in a group\r\n"
+            "  /history                     to check recent 50 history messages\r\n";
         send(connect_fd, welcome.c_str(), welcome.size(), 0);
 
         cout << "[INFO] New client connected: fd = " << connect_fd << endl;
@@ -301,6 +303,7 @@ void Server::handle_client_input(int fd)
         // Authentication required before messaging
         if (!userManager.isLoggedIn(fd))
         {
+
             if (msg.compare(0, 5, "/reg ") == 0)
             {
                 std::istringstream iss(msg.substr(5));
@@ -368,6 +371,42 @@ void Server::handle_client_input(int fd)
                     session.status = AuthStatus::AUTHORIZED;
                     std::string reply = "Logged in successfully as [" + username + "]\r\n";
                     send(fd, reply.c_str(), reply.size(), 0);
+
+                    db.open("chat.db");
+                    auto messages = db.getRecentMessages(10);
+
+                    std::ostringstream oss;
+                    oss << "=== Recent Messages ===\r\n";
+
+                    for (const auto& m : messages)
+                    {
+                        bool visible = false;
+                        if (m.type == "broadcast")
+                            visible = true;
+                        else if (m.type == "private")
+                            visible = (m.sender == session.nickname || m.receiver == session.nickname);
+                        else if (m.type == "group")
+                            visible = userManager.isInGroup(m.receiver, fd);
+
+                        if (visible)
+                        {
+                            std::string line;
+                            if (m.type == "broadcast")
+                                line = m.content;
+                            else if (m.type == "private")
+                                line = "[Private] " + m.sender + " -> " + m.receiver + ": " + m.content;
+                            else if (m.type == "group")
+                                line = "[Group " + m.receiver + "] " + m.sender + ": " + m.content;
+
+                            oss << line << "\r\n";
+                        }
+                    }
+
+                    std::string history_output = oss.str();
+                    if (history_output == "=== Recent Messages ===\r\n")
+                        history_output += "(no visible message)\r\n";
+
+                    send(fd, history_output.c_str(), history_output.size(), 0);
                 }
                 else
                 {
@@ -385,6 +424,56 @@ void Server::handle_client_input(int fd)
         }
         else
         {
+            if (msg == "/history")
+            {
+                std::cout << "[DEBUG] /history triggered by " << session.nickname << "\n";
+
+                db.open("chat.db");
+                auto messages = db.getRecentMessages(50);
+
+                std::ostringstream oss;
+                oss << "=== Recent Messages ===\r\n";
+
+                for (const auto& m : messages)
+                {
+                    bool visible = false;
+
+                    if (m.type == "broadcast")
+                    {
+                        visible = true;
+                    }
+                    else if (m.type == "private")
+                    {
+                        if (m.sender == session.nickname || m.receiver == session.nickname)
+                            visible = true;
+                    }
+                    else if (m.type == "group")
+                    {
+                        if (userManager.isInGroup(m.receiver, fd))
+                            visible = true;
+                    }
+
+                    if (visible)
+                    {
+                        std::string line;
+                        if (m.type == "broadcast")
+                            line = m.content;
+                        else if (m.type == "private")
+                            line = "[Private] " + m.sender + " -> " + m.receiver + ": " + m.content;
+                        else if (m.type == "group")
+                            line = "[Group " + m.receiver + "] " + m.sender + ": " + m.content;
+
+                        oss << line << "\r\n";
+                    }
+                }
+
+                std::string output = oss.str();
+                if (output == "=== Recent Messages ===\r\n")
+                    output += "(no visible message)\r\n";
+
+                send(fd, output.c_str(), output.size(), 0);
+                return;
+            }
             // Block redundant auth commands
             if (msg.compare(0, 5, "/reg ") == 0 || msg.compare(0, 7, "/login ") == 0)
             {
@@ -424,6 +513,8 @@ void Server::handle_client_input(int fd)
 
                 std::string confirm = "[To " + target_username + "]: " + content + "\r\n";
                 send(fd, confirm.c_str(), confirm.size(), 0);
+                db.open("chat.db");
+                db.insertMessage(session.nickname, target_username, content, "private");
                 return;
             }
 
@@ -511,7 +602,8 @@ void Server::handle_client_input(int fd)
                         send(member_fd, group_msg.c_str(), group_msg.size(), 0);
                     }
                 }
-
+                db.open("chat.db");
+                db.insertMessage(session.nickname, groupname, content, "group");
                 // Echo back to sender
                 send(fd, group_msg.c_str(), group_msg.size(), 0);
                 return;
@@ -535,6 +627,9 @@ void Server::handle_client_input(int fd)
  */
 void Server::broadcast_message(int from_fd, const std::string& msg)
 {
+    db.open("chat.db");
+    ClientSession& session = userManager.getClientSession(from_fd);
+    db.insertMessage(session.nickname, "ALL", msg, "broadcast");
     for (auto& [fd, session] : userManager.getAllClients())
     {
         // Uncomment to exclude sender: if (fd == from_fd) continue;

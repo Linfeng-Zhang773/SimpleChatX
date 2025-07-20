@@ -3,6 +3,7 @@
 #include "../includes/ClientSession.hpp"
 #include "ThreadPool.hpp"
 #include "UserManager.hpp"
+#include"Database.hpp"
 /**
  * @class Server
  * @brief A server class for handling server logics
@@ -16,6 +17,7 @@ private:
 public:
     int listen_fd;
     int epoll_fd;
+    Database db;
     Server();
     ~Server();
     void create_and_bind();
