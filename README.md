@@ -40,7 +40,7 @@ For detailed architectural notes and logic flow, see [Design.md](./docs/Design.m
 ### Run server
 
 ```bash
-./chat_server
+./ChatServer
 ```
 
 ### Quick start(client)
