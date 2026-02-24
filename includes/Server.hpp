@@ -1,41 +1,63 @@
-#ifndef SERVER_HPP
-#define SERVER_HPP
+#pragma once
 
-#include "../includes/ClientSession.hpp"
 #include "Database.hpp"
 #include "ThreadPool.hpp"
 #include "UserManager.hpp"
 
-/// Main server class: handles epoll, connections, and logic
+#include <atomic>
+#include <string>
+#include <vector>
+
+/**
+ * @brief TCP chat server using Linux epoll and a thread pool.
+ *
+ * Lifecycle: construct → run_server() (blocks until SIGINT/SIGTERM).
+ */
 class Server
 {
-private:
-    UserManager userManager; // Manage users and sessions
-    ThreadPool threadPool;   // Thread pool for async tasks
-
 public:
-    int listen_fd; // Listening socket fd
-    int epoll_fd;  // epoll instance fd
-    Database db;   // SQLite database for chat history
+    Server();
+    ~Server();
 
-    Server();  // Constructor: init members
-    ~Server(); // Destructor
+    Server(const Server&) = delete;
+    Server& operator=(const Server&) = delete;
 
-    // Setup server
-    void create_and_bind(); // Create listening socket and bind port
-    void setup_epoll();     // Setup epoll and add listen_fd
-    void run_server();      // Entry point: setup + start loop
+    /// @brief One-call entry point: bind, epoll, event loop.
+    void run_server();
 
-    // Event loop
-    void run_event_loop(); // Main epoll event loop
+    /// @brief Global flag set by the signal handler for graceful shutdown.
+    static std::atomic<bool> quit;
 
-    // Connection handling
-    void handle_new_connection();             // Accept and add new client
-    void handle_client_disconnection(int fd); // Cleanup disconnected client
+private:
+    Database db_;
+    UserManager userManager_;
+    ThreadPool threadPool_;
 
-    // Data processing
-    void handle_client_input(int fd);                            // Read & process client input
-    void broadcast_message(int from_fd, const std::string& msg); // Send to all clients
+    int listen_fd_ = -1;
+    int epoll_fd_ = -1;
+
+    // ── Setup ───────────────────────────────────────────────────────
+
+    void create_and_bind();
+    void setup_epoll();
+
+    // ── Event loop ──────────────────────────────────────────────────
+
+    void run_event_loop();
+    void handle_new_connection();
+    void handle_client_disconnection(int fd);
+    void handle_client_input(int fd);
+
+    // ── Messaging helpers ───────────────────────────────────────────
+
+    void broadcast_message(int from_fd, const std::string& msg);
+
+    /**
+     * @brief Format a filtered history block for the given user.
+     * @param nickname Viewer's username (for visibility filtering).
+     * @param fd       Viewer's fd (for group membership checks).
+     * @param limit    Number of messages to fetch.
+     * @return Ready-to-send string including the header.
+     */
+    std::string formatHistory(const std::string& nickname, int fd, int limit);
 };
-
-#endif

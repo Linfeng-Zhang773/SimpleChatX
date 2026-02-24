@@ -1,160 +1,150 @@
 #include "../includes/UserManager.hpp"
+#include "../includes/Utils.hpp"
 
-// default constructor
-UserManager::UserManager() {}
+UserManager::UserManager(Database& db) : db_(db) {}
 
-// a boolean method to check if user is already logged in
-bool UserManager::isRegistered(const std::string& username) const
+// ── Auth ────────────────────────────────────────────────────────────
+
+bool UserManager::registerUser(int fd, const std::string& username,
+                               const std::string& password)
 {
-    // if username exists in registered set, return true,else false
-    return registered_users.count(username) > 0;
-}
+    std::string pw_hash = hash_password(password);
 
-// Register a new user with username and password
-bool UserManager::registerUser(int fd, const std::string& username, const std::string& password)
-{
-    // username has been taken, return false
-    if (isRegistered(username)) return false;
+    // Persist to DB first (DB has its own mutex)
+    if (!db_.insertUser(username, pw_hash))
+        return false; // username already taken
 
-    // username and password insert to set
-    registered_users.insert(username);
-    password_map[username] = password;
-    // create session for user and authorized it
-    ClientSession session(fd);
-    session.nickname = username;
-    session.status = AuthStatus::AUTHORIZED;
-
-    // insert into map
-    clients[fd] = session;
-    nickname_map[username] = fd;
+    std::unique_lock lock(mtx_);
+    ClientSession& s = clients_[fd];
+    s.nickname = username;
+    s.status = AuthStatus::AUTHORIZED;
+    nickname_map_[username] = fd;
     return true;
 }
 
-// Login with username and password, bind to fd
-bool UserManager::loginUser(int fd, const std::string& username, const std::string& password)
+bool UserManager::loginUser(int fd, const std::string& username,
+                            const std::string& password)
 {
-    // Debug msgs
-    // std::cout << "[LOGIN DEBUG] username = " << username << ", password = " << password << "\n";
-    // std::cout << "[LOGIN DEBUG] isRegistered = " << isRegistered(username) << "\n";
-    // std::cout << "[LOGIN DEBUG] nickname_map.count = " << nickname_map.count(username) << "\n";
-    // std::cout << "[LOGIN DEBUG] stored password = " << password_map[username] << "\n";
-    if (!isRegistered(username)) return false;            // registered
-    if (nickname_map.count(username)) return false;       // Already logged in
-    if (password_map[username] != password) return false; // password not matching
-    ClientSession session(fd);
-    session.nickname = username;
-    session.status = AuthStatus::AUTHORIZED;
+    // Verify credentials against DB
+    std::string stored_hash;
+    if (!db_.getUserPasswordHash(username, stored_hash))
+        return false; // user doesn't exist
 
-    clients[fd] = session;
-    nickname_map[username] = fd;
+    if (stored_hash != hash_password(password))
+        return false; // wrong password
+
+    std::unique_lock lock(mtx_);
+    if (nickname_map_.count(username))
+        return false; // already logged in elsewhere
+
+    ClientSession& s = clients_[fd];
+    s.nickname = username;
+    s.status = AuthStatus::AUTHORIZED;
+    nickname_map_[username] = fd;
     return true;
 }
 
-// a method to check if user status
 bool UserManager::isLoggedIn(int fd) const
 {
-    auto it = clients.find(fd);
-    return it != clients.end() && it->second.status == AuthStatus::AUTHORIZED;
+    std::shared_lock lock(mtx_);
+    auto it = clients_.find(fd);
+    return it != clients_.end() && it->second.status == AuthStatus::AUTHORIZED;
 }
 
-// to search and get username from socket fd
 std::string UserManager::getNickname(int fd) const
 {
-    auto it = clients.find(fd);
-    if (it != clients.end())
-    {
-        return it->second.nickname;
-    }
-    return "";
+    std::shared_lock lock(mtx_);
+    auto it = clients_.find(fd);
+    return (it != clients_.end()) ? it->second.nickname : "";
 }
 
-// to log out user
 void UserManager::logoutUser(int fd)
 {
-    auto it = clients.find(fd);
-    if (it != clients.end())
-    {
-        // erase username in login map
-        std::string name = it->second.nickname;
-        nickname_map.erase(name);
-        // set status back to NONE and clear its username
-        it->second.status = AuthStatus::NONE;
-        it->second.nickname.clear();
-    }
+    std::unique_lock lock(mtx_);
+    auto it = clients_.find(fd);
+    if (it == clients_.end()) return;
+
+    nickname_map_.erase(it->second.nickname);
+    it->second.status = AuthStatus::NONE;
+    it->second.nickname.clear();
 }
-// add a client seesion to map
+
+// ── Session tracking ────────────────────────────────────────────────
+
 void UserManager::addClient(int fd)
 {
-    clients[fd] = ClientSession(fd);
+    std::unique_lock lock(mtx_);
+    clients_[fd] = ClientSession(fd);
 }
 
-// remove a client session from map
 void UserManager::removeClient(int fd)
 {
-    clients.erase(fd);
-    nickname_map.erase(getNickname(fd));
+    std::unique_lock lock(mtx_);
+    auto it = clients_.find(fd);
+    if (it == clients_.end()) return;
+
+    // Remove nickname mapping BEFORE erasing the session
+    nickname_map_.erase(it->second.nickname);
+    clients_.erase(it);
 }
 
-// check if client session exists
 bool UserManager::hasClient(int fd) const
 {
-    return clients.find(fd) != clients.end();
+    std::shared_lock lock(mtx_);
+    return clients_.count(fd) > 0;
 }
 
-// get client session from socket fd
-ClientSession& UserManager::getClientSession(int fd)
+std::vector<int> UserManager::getAllFds() const
 {
-    return clients.at(fd);
-}
-// get all client sessions
-std::unordered_map<int, ClientSession>& UserManager::getAllClients()
-{
-    return clients;
+    std::shared_lock lock(mtx_);
+    std::vector<int> fds;
+    fds.reserve(clients_.size());
+    for (const auto& [fd, _] : clients_)
+        fds.push_back(fd);
+    return fds;
 }
 
-// get socket fd from nickname using map
+ClientSession UserManager::getSession(int fd) const
+{
+    std::shared_lock lock(mtx_);
+    return clients_.at(fd); // returns a copy — safe across threads
+}
+
 int UserManager::getFdByNickname(const std::string& nickname) const
 {
-    auto it = nickname_map.find(nickname);
-    if (it != nickname_map.end())
-    {
-        return it->second;
-    }
-    return -1;
+    std::shared_lock lock(mtx_);
+    auto it = nickname_map_.find(nickname);
+    return (it != nickname_map_.end()) ? it->second : -1;
 }
 
-// Create a new group
+// ── Groups ──────────────────────────────────────────────────────────
+
 bool UserManager::createGroup(const std::string& groupname)
 {
-    // if group exists, return false
-    if (groups.count(groupname)) return false;
-    groups[groupname] = std::unordered_set<int>();
+    std::unique_lock lock(mtx_);
+    if (groups_.count(groupname)) return false;
+    groups_[groupname] = {};
     return true;
 }
 
-// to join a group
 bool UserManager::joinGroup(const std::string& groupname, int fd)
 {
-    auto it = groups.find(groupname);
-    if (it == groups.end()) return false;
-
-    if (it->second.count(fd)) return false;
-
-    it->second.insert(fd);
-    return true;
+    std::unique_lock lock(mtx_);
+    auto it = groups_.find(groupname);
+    if (it == groups_.end()) return false;
+    return it->second.insert(fd).second; // false if already a member
 }
 
-// check if this user is in a group
 bool UserManager::isInGroup(const std::string& groupname, int fd) const
 {
-    auto it = groups.find(groupname);
-    if (it == groups.end()) return false;
-    return it->second.count(fd) > 0;
+    std::shared_lock lock(mtx_);
+    auto it = groups_.find(groupname);
+    return it != groups_.end() && it->second.count(fd);
 }
-// to get all group memebers in a group
+
 std::unordered_set<int> UserManager::getGroupMembers(const std::string& groupname) const
 {
-    auto it = groups.find(groupname);
-    if (it != groups.end()) return it->second;
-    return {};
+    std::shared_lock lock(mtx_);
+    auto it = groups_.find(groupname);
+    return (it != groups_.end()) ? it->second : std::unordered_set<int>{};
 }

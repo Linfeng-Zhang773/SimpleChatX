@@ -1,16 +1,15 @@
-#ifndef MESSAGE_HPP
-#define MESSAGE_HPP
+#pragma once
 
 #include <string>
 
-/// Represents a single chat message (used for DB and display)
+/**
+ * @brief Represents one persisted chat message (DB row).
+ */
 struct ChatMessage
 {
-    std::string sender;    // Username of the sender
-    std::string receiver;  // Username of the receiver (or group name)
-    std::string content;   // The text content of the message
-    std::string type;      // Message type: "private", "group", etc.
-    std::string timestamp; // When the message was sent (as string)
+    std::string sender;
+    std::string receiver;
+    std::string content;
+    std::string type;      ///< "private", "group", or "broadcast"
+    std::string timestamp; ///< "YYYY-MM-DD HH:MM:SS"
 };
-
-#endif

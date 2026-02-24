@@ -497,7 +497,7 @@ Although I implemented chat msgs persistance, right now if the server is crashed
 
 ### Day12_Tasks Completed
 1. Wrap up the SimpleChatX
-  - update code and comments, fix potential bugs
+  - update code and comments, fix potential bugs(Add Thread-safe, hash password, add user persistence, add config, refactor code)
   - add build.sh and clean.sh
   - remove makefile, update Cmake file
   - Update README and Devlog

@@ -1,35 +1,34 @@
 #include "../includes/Database.hpp"
+
 #include <ctime>
 #include <iostream>
 
-// Constructor: init db handle to null
 Database::Database() : db(nullptr) {}
 
-// Destructor: close DB if open
-Database::~Database()
-{
-    close();
-}
+Database::~Database() { close(); }
 
-// Open SQLite DB and create table if needed
 bool Database::open(const std::string& db_filename)
 {
-    std::string filename = db_filename;
-    // check if open succeed, else will return error message
-    if (sqlite3_open(filename.c_str(), &db) != SQLITE_OK)
+    std::lock_guard<std::mutex> lock(mtx);
+    if (db) return true; // already open
+
+    if (sqlite3_open(db_filename.c_str(), &db) != SQLITE_OK)
     {
-        std::cerr << "Failed to open database: " << sqlite3_errmsg(db) << "\n";
+        std::cerr << "[DB] Failed to open: " << sqlite3_errmsg(db) << "\n";
+        db = nullptr;
         return false;
     }
-    // return succeed feedback
-    std::cout << "SQLite opened successfully!\n";
-    return init();
+
+    // Enable WAL mode for better concurrent read performance
+    sqlite3_exec(db, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+
+    std::cout << "[DB] Opened " << db_filename << "\n";
+    return initTables();
 }
 
-// Close SQLite DB if open
 void Database::close()
 {
-    // if db not nullptr, call sqlite_close() to close and reset db to nullptr
+    std::lock_guard<std::mutex> lock(mtx);
     if (db)
     {
         sqlite3_close(db);
@@ -37,97 +36,150 @@ void Database::close()
     }
 }
 
-// Create "messages" table if it doesn't exist
-bool Database::init()
+bool Database::initTables()
 {
-
-    // SQL statement to create messages table with 6 fields:
-    // id: auto-incremented primary key
-    // sender: sender name
-    // receiver: receiver name
-    // content: chat message
-    // type: "private" / "group"
-    // timestamp: when message was sent (as text)
-    const char* sql =
+    const char* sql_messages =
         "CREATE TABLE IF NOT EXISTS messages ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "sender TEXT,"
-        "receiver TEXT,"
-        "content TEXT,"
-        "type TEXT,"
-        "timestamp TEXT"
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  sender   TEXT NOT NULL,"
+        "  receiver TEXT NOT NULL,"
+        "  content  TEXT NOT NULL,"
+        "  type     TEXT NOT NULL,"
+        "  timestamp TEXT NOT NULL"
         ");";
-    // Run SQL; on failure, print error message
-    char* errMsg = nullptr;
-    if (sqlite3_exec(db, sql, nullptr, nullptr, &errMsg) != SQLITE_OK)
+
+    const char* sql_users =
+        "CREATE TABLE IF NOT EXISTS users ("
+        "  username      TEXT PRIMARY KEY,"
+        "  password_hash TEXT NOT NULL"
+        ");";
+
+    char* err = nullptr;
+    if (sqlite3_exec(db, sql_messages, nullptr, nullptr, &err) != SQLITE_OK)
     {
-        std::cerr << "Failed to create table: " << errMsg << "\n";
-        sqlite3_free(errMsg);
+        std::cerr << "[DB] Create messages table: " << err << "\n";
+        sqlite3_free(err);
+        return false;
+    }
+    if (sqlite3_exec(db, sql_users, nullptr, nullptr, &err) != SQLITE_OK)
+    {
+        std::cerr << "[DB] Create users table: " << err << "\n";
+        sqlite3_free(err);
         return false;
     }
     return true;
 }
 
-// Insert one message into DB with timestamp
+// ── Messages ────────────────────────────────────────────────────────
+
 bool Database::insertMessage(const std::string& sender,
                              const std::string& receiver,
                              const std::string& content,
                              const std::string& type)
 {
-    // If database is not opened
+    std::lock_guard<std::mutex> lock(mtx);
     if (!db) return false;
 
-    // Prepare SQL insert statement with placeholders
-    const char* sql = "INSERT INTO messages (sender, receiver, content, type, timestamp) VALUES (?, ?, ?, ?, ?);";
-    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "INSERT INTO messages (sender, receiver, content, type, timestamp) "
+        "VALUES (?, ?, ?, ?, ?);";
 
-    // Compile SQL to a prepared statement
+    sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
         return false;
 
-    // Bind values to SQL placeholders (?):
     sqlite3_bind_text(stmt, 1, sender.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, receiver.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, content.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 4, type.c_str(), -1, SQLITE_TRANSIENT);
 
-    // Get current time in "YYYY-MM-DD HH:MM:SS" format
-    time_t now = time(nullptr);
-    char time_str[20];
-    strftime(time_str, sizeof(time_str), "%F %T", localtime(&now)); // Format current time
-    sqlite3_bind_text(stmt, 5, time_str, -1, SQLITE_TRANSIENT);     // Bind timestamp
-    // Execute SQL statement and check if it succeeds
-    bool success = (sqlite3_step(stmt) == SQLITE_DONE);
-    // Free prepared statement resources
+    char ts[20];
+    std::time_t now = std::time(nullptr);
+    std::strftime(ts, sizeof(ts), "%F %T", std::localtime(&now));
+    sqlite3_bind_text(stmt, 5, ts, -1, SQLITE_TRANSIENT);
+
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
-    return success;
+    return ok;
 }
-// Return N most recent chat messages from DB
+
 std::vector<ChatMessage> Database::getRecentMessages(int limit) const
 {
+    std::lock_guard<std::mutex> lock(mtx);
     std::vector<ChatMessage> result;
-    // If DB not open, return empty result
     if (!db) return result;
-    // SQL to select recent messages (most recent first)
-    const char* sql = "SELECT sender, receiver, content, type, timestamp FROM messages ORDER BY id DESC LIMIT ?;";
+
+    const char* sql =
+        "SELECT sender, receiver, content, type, timestamp "
+        "FROM messages ORDER BY id DESC LIMIT ?;";
+
     sqlite3_stmt* stmt = nullptr;
-    // Prepare the SQL statement
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
         return result;
-    // Bind the limit (number of messages to fetch)
+
     sqlite3_bind_int(stmt, 1, limit);
-    // Fetch rows one by one and convert to ChatMessage objects
+
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
-        ChatMessage msg;
-        msg.sender = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        msg.receiver = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        msg.content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-        msg.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        msg.timestamp = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-        result.push_back(msg);
+        ChatMessage m;
+        m.sender = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        m.receiver = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        m.content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        m.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        m.timestamp = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        result.push_back(std::move(m));
     }
-    // Clean up prepared statement
+
     sqlite3_finalize(stmt);
     return result;
+}
+
+// ── Users ───────────────────────────────────────────────────────────
+
+bool Database::insertUser(const std::string& username,
+                          const std::string& password_hash)
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    if (!db) return false;
+
+    const char* sql = "INSERT OR IGNORE INTO users (username, password_hash) VALUES (?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
+        return false;
+
+    sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, password_hash.c_str(), -1, SQLITE_TRANSIENT);
+
+    bool ok = (sqlite3_step(stmt) == SQLITE_DONE) && (sqlite3_changes(db) > 0);
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
+bool Database::getUserPasswordHash(const std::string& username,
+                                   std::string& out_hash) const
+{
+    std::lock_guard<std::mutex> lock(mtx);
+    if (!db) return false;
+
+    const char* sql = "SELECT password_hash FROM users WHERE username = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
+        return false;
+
+    sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+
+    bool found = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        out_hash = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        found = true;
+    }
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+bool Database::userExists(const std::string& username) const
+{
+    std::string dummy;
+    return getUserPasswordHash(username, dummy);
 }

@@ -1,25 +1,23 @@
-#ifndef CLIENTSESSION_HPP
-#define CLIENTSESSION_HPP
+#pragma once
 #include <string>
 
-// status of client authentication
+/// Authentication state of a connected client.
 enum class AuthStatus : int
 {
-    NONE,      // Not authorized
-    AUTHORIZED // authorized
+    NONE,      ///< Not yet authenticated
+    AUTHORIZED ///< Successfully registered or logged in
 };
 
-// store session info for a connected client
+/**
+ * @brief Holds runtime state for one TCP connection.
+ */
 class ClientSession
 {
 public:
-    int fd;                  // socket file descriptor
-    AuthStatus status;       // Auth status
-    std::string nickname;    // Nickname after register or login
-    std::string read_buffer; // buffer for incoming messages
+    int fd;                  ///< Socket file descriptor
+    AuthStatus status;       ///< Current auth state
+    std::string nickname;    ///< Username (empty until authenticated)
+    std::string read_buffer; ///< Accumulates partial TCP reads
 
-    ClientSession(int fd); // constructor init with socket fd
-    ClientSession();       // default destructor
+    explicit ClientSession(int fd = -1);
 };
-
-#endif
