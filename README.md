@@ -1,6 +1,6 @@
 # SimpleChatX — High-Performance Event-Driven Chat Server
 
-A robust, multi-threaded C++ chat backend featuring asynchronous I/O with epoll, thread-pool task distribution, and persistent storage with SQLite3.
+High-performance C++17 chat server using epoll and thread pool. Supports multi-client messaging, user management, and SQLite-based persistence.
 
 ## Overview
 
