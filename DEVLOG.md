@@ -492,3 +492,15 @@ Although I implemented chat msgs persistance, right now if the server is crashed
 - On server start, preload all registered users into memory or directly query DB during login
 - Extend Database schema with `users` table:  
   `CREATE TABLE users (username TEXT PRIMARY KEY, password TEXT NOT NULL);`
+
+## Development Log — Day 13
+
+### Day12_Tasks Completed
+1. Wrap up the SimpleChatX
+  - update code and comments, fix potential bugs
+  - add build.sh and clean.sh
+  - remove makefile, update Cmake file
+  - Update README and Devlog
+  - Update gitigonre
+  - Test functionalities
+  - Add MIT license
