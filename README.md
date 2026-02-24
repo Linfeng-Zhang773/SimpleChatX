@@ -42,7 +42,6 @@
 .
 ├── includes/           # 头文件
 ├── src/                # 源代码
-├── scripts/            # 启动脚本
 ├── chat.db             # 聊天记录数据库（运行后生成）
 ├── CMakeLists.txt      # CMake 构建文件
 ├── Makefile            # Makefile
