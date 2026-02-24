@@ -44,7 +44,6 @@
 ├── src/                # 源代码
 ├── chat.db             # 聊天记录数据库（运行后生成）
 ├── CMakeLists.txt      # CMake 构建文件
-├── Makefile            # Makefile
 ├── DEVLOG.md           # 开发日志
 └── README.md
 ```

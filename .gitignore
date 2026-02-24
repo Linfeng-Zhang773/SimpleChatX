@@ -1,4 +1,61 @@
-ChatServer
-objs/
-obj/
+#######################################
+# CMake build directories
+#######################################
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
 
+#######################################
+# Compiled object files
+#######################################
+*.o
+*.obj
+*.lo
+*.a
+*.so
+*.so.*
+*.dll
+*.dylib
+
+#######################################
+# Executable binaries
+#######################################
+ChatServer
+*.out
+*.exe
+
+#######################################
+# Runtime database files (generated at runtime)
+#######################################
+chat.db
+*.db
+*.sqlite
+*.sqlite3
+
+#######################################
+# Log files
+#######################################
+*.log
+
+#######################################
+# VSCode configuration
+#######################################
+.vscode/
+
+#######################################
+# Temporary / swap files
+#######################################
+*~
+*.swp
+*.swo
+*.tmp
+
+#######################################
+# OS-specific files
+#######################################
+.DS_Store
+Thumbs.db
